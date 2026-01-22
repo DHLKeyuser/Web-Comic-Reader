@@ -767,6 +767,25 @@ footer a:hover {
     font-weight: 600;
 }
 
+.dock-chapter-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .2s;
+}
+
+.dock-chapter-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .dock-toggle-btn {
     width: 44px;
     height: 44px;
@@ -797,6 +816,26 @@ footer a:hover {
 .webtoon-dock-content {
     width: 100%;
     padding: 8px 16px 12px;
+}
+
+.webtoon-dock.expanded .dock-chapter-btn {
+    display: none;
+}
+
+.next-chapter-float {
+    position: fixed;
+    right: 16px;
+    bottom: calc(var(--dock-safe-offset, 0px) + 12px);
+    z-index: 1001;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 8px 20px rgba(0,0,0,.18);
+    cursor: pointer;
 }
 
 .webtoon-dock-content .reader-toolbar {

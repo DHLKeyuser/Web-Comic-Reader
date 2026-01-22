@@ -112,6 +112,10 @@
                 <div id="pageIndicator" class="page-indicator">0 / 0</div>
                 <button type="button" id="nextPageBtn" class="reader-btn" aria-label="Next page">Next</button>
             </div>
+            <div class="reader-toolbar-group chapter-group">
+                <button type="button" id="prevChapterBtn" class="reader-btn" aria-label="Previous chapter">⬅ Previous Chapter</button>
+                <button type="button" id="nextChapterBtn" class="reader-btn" aria-label="Next chapter">Next Chapter ➡</button>
+            </div>
             <div class="reader-toolbar-group zoom-group">
                 <button type="button" id="zoomOutBtn" class="reader-btn" aria-label="Zoom out">-</button>
                 <span id="zoomLevel" class="zoom-level">100%</span>
@@ -132,7 +136,9 @@
         <div id="scrollContainer" class="scroll-container" style="display:none;"></div>
         <div id="webtoonDock" class="webtoon-dock collapsed" style="display:none;">
             <div class="webtoon-dock-handle">
+                <button type="button" id="dockPrevChapterBtn" class="dock-chapter-btn" aria-label="Previous chapter">◀</button>
                 <div id="dockPageIndicator" class="dock-page-indicator">0 / 0</div>
+                <button type="button" id="dockNextChapterBtn" class="dock-chapter-btn" aria-label="Next chapter">▶</button>
                 <button type="button" id="dockToggleBtn" class="dock-toggle-btn" aria-label="Toggle Webtoon dock" aria-expanded="false">
                     <svg class="dock-toggle-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 12 10 8 14 12"></polyline>
@@ -141,6 +147,7 @@
             </div>
             <div id="webtoonDockContent" class="webtoon-dock-content"></div>
         </div>
+        <button type="button" id="nextChapterFloat" class="next-chapter-float" style="display:none;">Next Chapter →</button>
     </div>
 
     <script src="./assets/js/uncompress/uncompress.js"></script>

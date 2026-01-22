@@ -41,6 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dockToggleBtn = document.getElementById('dockToggleBtn');
     const dockPageIndicatorEl = document.getElementById('dockPageIndicator');
     const dockContentEl = document.getElementById('webtoonDockContent');
+    const prevChapterBtn = document.getElementById('prevChapterBtn');
+    const nextChapterBtn = document.getElementById('nextChapterBtn');
+    const dockPrevChapterBtn = document.getElementById('dockPrevChapterBtn');
+    const dockNextChapterBtn = document.getElementById('dockNextChapterBtn');
+    const nextChapterFloatBtn = document.getElementById('nextChapterFloat');
+    const chapterGroupEl = document.querySelector('.chapter-group');
     const modeButtons = document.querySelectorAll('[data-reading-mode]');
 
     let comicsDirectoryHandle = null;
@@ -306,7 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            comics.sort();
+            comics.sort(naturalCompare);
+            libraryComicList = [...comics];
+            updateChapterContext(currentComicFilename, currentChapterFromLibrary);
 
             // get reading history for thumbnails
             const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
@@ -401,15 +409,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_ZOOM_KEY = 'scrollZoom';
     const SMART_GAP_KEY = 'scrollSmartGap';
     const WEBTOON_DOCK_KEY = 'webtoonDockCollapsed';
+    const CHAPTER_PROGRESS_KEY = 'comicChapterProgress';
     const SCROLL_ZOOM_MIN = 0.1;
     const SCROLL_ZOOM_MAX = 2;
     const BASE_SCROLL_WIDTH_VW = 90;
+    const AUTO_ADVANCE_THRESHOLD = 300;
+    const AUTO_ADVANCE_DELAY = 1500;
 
     let readingMode = localStorage.getItem(READER_MODE_KEY) === 'scroll' ? 'scroll' : 'paged';
     let scrollZoom = parseFloat(localStorage.getItem(SCROLL_ZOOM_KEY)) || 1;
     scrollZoom = clamp(scrollZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
     let smartGapEnabled = localStorage.getItem(SMART_GAP_KEY) === 'true';
     let dockCollapsed = localStorage.getItem(WEBTOON_DOCK_KEY) === 'true';
+    let libraryComicList = [];
+    let currentChapterIndex = -1;
+    let currentChapterFromLibrary = false;
+    let autoAdvanceTimer = null;
+    let autoAdvanceVisible = false;
     let pageUrls = [];
     let pageLinks = [];
     let totalPages = 0;
@@ -428,11 +444,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeReaderControls();
 
-    function openComic(file) {
+    function openComic(file, options = {}) {
         outputElement.style.display = 'none';
         wrapElement.classList.add('collapsed');
         collapseBtn.classList.add('show');
         currentComicFilename = file.name;
+        currentChapterFromLibrary = options.fromLibrary === true;
+        updateChapterContext(currentComicFilename, currentChapterFromLibrary);
         progressTextElement.innerHTML = "Reading 0/0 pages";
         sePreConElement.style.display = 'block';
 
@@ -502,6 +520,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 setDockCollapsed(!dockCollapsed);
             });
         }
+        if (prevChapterBtn) {
+            prevChapterBtn.addEventListener('click', () => goToPreviousChapter());
+        }
+        if (nextChapterBtn) {
+            nextChapterBtn.addEventListener('click', () => goToNextChapter());
+        }
+        if (dockPrevChapterBtn) {
+            dockPrevChapterBtn.addEventListener('click', () => goToPreviousChapter());
+        }
+        if (dockNextChapterBtn) {
+            dockNextChapterBtn.addEventListener('click', () => goToNextChapter());
+        }
+        if (nextChapterFloatBtn) {
+            nextChapterFloatBtn.addEventListener('click', () => goToNextChapter());
+        }
         if (pagedImageLinkEl) {
             pagedImageLinkEl.addEventListener('click', (event) => {
                 if (!pageLinks.length) {
@@ -520,6 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('orientationchange', () => {
             setTimeout(updateDockPadding, 80);
         });
+        window.addEventListener('scroll', handleWindowScroll, { passive: true });
     }
 
     function updateDockState() {
@@ -544,6 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!scrollContainerEl) return;
         if (readingMode !== 'scroll' || !webtoonDockEl || webtoonDockEl.style.display === 'none') {
             scrollContainerEl.style.paddingBottom = '';
+            document.documentElement.style.removeProperty('--dock-safe-offset');
             return;
         }
 
@@ -556,6 +591,149 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         scrollContainerEl.style.paddingBottom = `${Math.ceil(safeHeight)}px`;
+        document.documentElement.style.setProperty('--dock-safe-offset', `${Math.ceil(safeHeight)}px`);
+    }
+
+    function updateChapterContext(filename, fromLibrary) {
+        currentChapterFromLibrary = Boolean(fromLibrary);
+
+        if (!currentChapterFromLibrary || !filename || libraryComicList.length === 0) {
+            currentChapterIndex = -1;
+            updateChapterButtons();
+            return;
+        }
+
+        currentChapterIndex = libraryComicList.indexOf(filename);
+        updateChapterButtons();
+    }
+
+    function updateChapterButtons() {
+        const hasChapters = currentChapterFromLibrary && currentChapterIndex >= 0 && libraryComicList.length > 0;
+        const hasPrev = hasChapters && currentChapterIndex > 0;
+        const hasNext = hasChapters && currentChapterIndex < libraryComicList.length - 1;
+
+        if (chapterGroupEl) {
+            chapterGroupEl.style.display = hasChapters ? 'flex' : 'none';
+        }
+
+        setButtonState(prevChapterBtn, hasPrev, hasChapters);
+        setButtonState(nextChapterBtn, hasNext, hasChapters);
+        setButtonState(dockPrevChapterBtn, hasPrev, hasChapters);
+        setButtonState(dockNextChapterBtn, hasNext, hasChapters);
+
+        if (!hasNext) {
+            hideNextChapterFloat();
+        }
+    }
+
+    function setButtonState(button, enabled, visible) {
+        if (!button) return;
+        button.disabled = !enabled;
+        button.style.display = visible ? 'inline-flex' : 'none';
+    }
+
+    function getChapterProgress(filename) {
+        if (!filename) return null;
+        try {
+            const progress = JSON.parse(localStorage.getItem(CHAPTER_PROGRESS_KEY) || '{}');
+            return progress[filename] || null;
+        } catch (e) {
+            console.error('Failed to read chapter progress:', e);
+            return null;
+        }
+    }
+
+    function saveChapterProgress(filename, pageIndex) {
+        if (!filename) return;
+        try {
+            const progress = JSON.parse(localStorage.getItem(CHAPTER_PROGRESS_KEY) || '{}');
+            progress[filename] = {
+                mode: readingMode === 'scroll' ? 'webtoon' : 'paged',
+                pageIndex,
+                lastRead: Date.now()
+            };
+            localStorage.setItem(CHAPTER_PROGRESS_KEY, JSON.stringify(progress));
+        } catch (e) {
+            console.error('Failed to save chapter progress:', e);
+        }
+    }
+
+    function goToNextChapter() {
+        openAdjacentChapter(1);
+    }
+
+    function goToPreviousChapter() {
+        openAdjacentChapter(-1);
+    }
+
+    function openAdjacentChapter(offset) {
+        if (!currentChapterFromLibrary || currentChapterIndex < 0) return;
+        const targetIndex = currentChapterIndex + offset;
+        if (targetIndex < 0 || targetIndex >= libraryComicList.length) return;
+
+        const progressIndex = readingMode === 'scroll' ? currentScrollIndex : currentPageIndex;
+        saveChapterProgress(currentComicFilename, progressIndex);
+        saveLastPageRead(currentComicFilename, progressIndex);
+
+        const targetFilename = libraryComicList[targetIndex];
+        if (!targetFilename) return;
+        openComicFromFolder(targetFilename);
+        hideNextChapterFloat();
+    }
+
+    function handleWindowScroll() {
+        if (readingMode !== 'scroll') {
+            hideNextChapterFloat();
+            return;
+        }
+
+        const hasNext = currentChapterFromLibrary && currentChapterIndex >= 0 && currentChapterIndex < libraryComicList.length - 1;
+        if (!hasNext || !scrollPageElements.length) {
+            hideNextChapterFloat();
+            return;
+        }
+
+        const lastPage = scrollPageElements[scrollPageElements.length - 1];
+        const distanceToBottom = lastPage.getBoundingClientRect().bottom - window.innerHeight;
+        if (distanceToBottom <= AUTO_ADVANCE_THRESHOLD) {
+            showNextChapterFloat();
+            scheduleAutoAdvance();
+        } else {
+            cancelAutoAdvance();
+            hideNextChapterFloat();
+        }
+    }
+
+    function showNextChapterFloat() {
+        if (!nextChapterFloatBtn) return;
+        if (!autoAdvanceVisible) {
+            nextChapterFloatBtn.style.display = 'inline-flex';
+            autoAdvanceVisible = true;
+        }
+    }
+
+    function hideNextChapterFloat() {
+        if (!nextChapterFloatBtn) return;
+        if (autoAdvanceVisible) {
+            nextChapterFloatBtn.style.display = 'none';
+            autoAdvanceVisible = false;
+        }
+        cancelAutoAdvance();
+    }
+
+    function scheduleAutoAdvance() {
+        if (autoAdvanceTimer) return;
+        autoAdvanceTimer = setTimeout(() => {
+            autoAdvanceTimer = null;
+            goToNextChapter();
+        }, AUTO_ADVANCE_DELAY);
+    }
+
+    function cancelAutoAdvance() {
+        if (autoAdvanceTimer) {
+            clearTimeout(autoAdvanceTimer);
+            autoAdvanceTimer = null;
+        }
     }
 
     function resetReaderView() {
@@ -596,6 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (webtoonDockEl) {
             webtoonDockEl.style.display = 'none';
         }
+        hideNextChapterFloat();
         if (readerToolbarHome && readerToolbarEl) {
             if (readerToolbarAnchor) {
                 readerToolbarHome.insertBefore(readerToolbarEl, readerToolbarAnchor);
@@ -627,11 +806,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         buildLightboxLinks();
         initializeGallery();
+        const chapterProgress = getChapterProgress(currentComicFilename);
         const lastPage = getLastPageRead(currentComicFilename);
-        currentPageIndex = clamp(lastPage, 0, totalPages - 1);
+        const startIndex = typeof chapterProgress?.pageIndex === 'number' ? chapterProgress.pageIndex : lastPage;
+        currentPageIndex = clamp(startIndex, 0, totalPages - 1);
         currentScrollIndex = currentPageIndex;
         applyReadingMode(true);
         updatePageIndicator();
+        updateChapterButtons();
 
         setTimeout(() => {
             generateThumbnailFromFirstImage();
@@ -805,6 +987,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (scrollContainerEl) {
             scrollContainerEl.style.paddingBottom = '';
         }
+        hideNextChapterFloat();
     }
 
     function updateModeButtons() {
@@ -1216,6 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 thumbnail: finalThumbnail
             };
             localStorage.setItem('comic_reader_userpref', JSON.stringify(readingHistory));
+            saveChapterProgress(filename, pageIndex);
         } catch (e) {
             console.error('Failed to save reading history:', e);
         }
@@ -1363,7 +1547,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const fileHandle = await comicsDirectoryHandle.getFileHandle(filename);
             const file = await fileHandle.getFile();
-            openComic(file);
+            updateChapterContext(filename, true);
+            openComic(file, { fromLibrary: true });
             // refresh recent list after opening
             setTimeout(async () => {
                 if (comicsDirectoryHandle) {
@@ -1401,5 +1586,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
+    }
+
+    function naturalCompare(a, b) {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     }
 });
