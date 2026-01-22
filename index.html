@@ -61,7 +61,24 @@
                     <button id="changeFolderBtn" class="link-btn">Change folder</button>
                     <span class="header-divider">•</span>
                     <button id="toggleUploadBtn" class="link-btn">Quick read</button>
+                    <span class="header-divider">•</span>
+                    <button id="settingsToggleBtn" class="link-btn">Settings</button>
                 </div>
+            </div>
+
+            <div id="settingsPanel" class="settings-panel" style="display:none;">
+                <div class="settings-row">
+                    <label for="defaultModeSelect">Default reading mode</label>
+                    <select id="defaultModeSelect" class="settings-select">
+                        <option value="scroll">Webtoon / Scroll</option>
+                        <option value="paged">Paged</option>
+                    </select>
+                </div>
+                <label class="settings-row settings-toggle">
+                    <input type="checkbox" id="autoAdvanceToggle">
+                    <span>Auto-advance at end (Webtoon)</span>
+                </label>
+                <button id="resetProgressBtn" class="link-btn danger">Reset all progress</button>
             </div>
 
             <div id="recentComics" style="display:none;">
@@ -115,6 +132,9 @@
             <div class="reader-toolbar-group chapter-group">
                 <button type="button" id="prevChapterBtn" class="reader-btn" aria-label="Previous chapter">⬅ Previous Chapter</button>
                 <button type="button" id="nextChapterBtn" class="reader-btn" aria-label="Next chapter">Next Chapter ➡</button>
+            </div>
+            <div class="reader-toolbar-group restart-group">
+                <button type="button" id="restartChapterBtn" class="reader-btn" aria-label="Restart chapter">Restart</button>
             </div>
             <div class="reader-toolbar-group zoom-group">
                 <button type="button" id="zoomOutBtn" class="reader-btn" aria-label="Zoom out">-</button>

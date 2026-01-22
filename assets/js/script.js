@@ -47,6 +47,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dockNextChapterBtn = document.getElementById('dockNextChapterBtn');
     const nextChapterFloatBtn = document.getElementById('nextChapterFloat');
     const chapterGroupEl = document.querySelector('.chapter-group');
+    const settingsToggleBtn = document.getElementById('settingsToggleBtn');
+    const settingsPanelEl = document.getElementById('settingsPanel');
+    const defaultModeSelectEl = document.getElementById('defaultModeSelect');
+    const autoAdvanceToggleEl = document.getElementById('autoAdvanceToggle');
+    const resetProgressBtn = document.getElementById('resetProgressBtn');
+    const restartChapterBtn = document.getElementById('restartChapterBtn');
     const modeButtons = document.querySelectorAll('[data-reading-mode]');
 
     let comicsDirectoryHandle = null;
@@ -313,35 +319,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             comics.sort(naturalCompare);
-            libraryComicList = [...comics];
+            const seriesList = buildSeriesGroups(comics);
+            libraryComicList = seriesList.flatMap(series => series.chapters);
             updateChapterContext(currentComicFilename, currentChapterFromLibrary);
-
-            // get reading history for thumbnails
-            const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
-
-            for (const filename of comics) {
-                const comicData = readingHistory[filename];
-                const hasThumbnail = comicData?.thumbnail;
-
-                const iconContent = hasThumbnail
-                    ? `<img src="${comicData.thumbnail}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">`
-                    : `<svg viewBox="0 0 16 16">
-                        <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 12.5 2h-9zm6.854 6.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L8.793 9H5.5a.5.5 0 0 1 0-1h3.293L6.646 5.854a.5.5 0 1 1 .708-.708l3 3z"/>
-                    </svg>`;
-
-                const item = document.createElement('div');
-                item.className = 'recent-comic-item';
-                item.innerHTML = `
-                    <div class="recent-comic-icon">
-                        ${iconContent}
-                    </div>
-                    <div class="recent-comic-info">
-                        <div class="recent-comic-name">${filename}</div>
-                    </div>
-                `;
-                item.addEventListener('click', () => openComicFromFolder(filename));
-                allComicsListEl.appendChild(item);
-            }
+            renderSeriesLibrary(seriesList);
         } catch (err) {
             console.error('Failed to load all comics:', err);
             
@@ -384,6 +365,80 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function buildSeriesGroups(comics) {
+        const seriesMap = new Map();
+        comics.forEach((filename) => {
+            const seriesKey = parseSeriesKey(filename);
+            const seriesTitle = formatSeriesTitle(filename, seriesKey);
+            if (!seriesMap.has(seriesKey)) {
+                seriesMap.set(seriesKey, {
+                    key: seriesKey,
+                    title: seriesTitle,
+                    chapters: []
+                });
+            }
+            seriesMap.get(seriesKey).chapters.push(filename);
+        });
+
+        const seriesList = Array.from(seriesMap.values());
+        seriesList.forEach((series) => {
+            series.chapters.sort(naturalCompare);
+        });
+        seriesList.sort((a, b) => naturalCompare(a.title, b.title));
+        return seriesList;
+    }
+
+    function renderSeriesLibrary(seriesList) {
+        if (!allComicsListEl) return;
+
+        const progressStore = loadProgressStore();
+        allComicsListEl.innerHTML = '';
+        allComicsListEl.classList.add('series-list');
+
+        seriesList.forEach((series) => {
+            const seriesWrapper = document.createElement('div');
+            seriesWrapper.className = 'series-item';
+            const latest = getLatestSeriesProgress(series.chapters, progressStore);
+            const latestLabel = latest
+                ? `${series.chapters.length} chapters • ${latest.filename} • ${formatTimestamp(latest.progress.lastRead)}`
+                : `${series.chapters.length} chapters`;
+
+            seriesWrapper.innerHTML = `
+                <button class="series-header" aria-expanded="false">
+                    <div>
+                        <div class="series-title">${series.title}</div>
+                        <div class="series-meta">${latestLabel}</div>
+                    </div>
+                    <span class="series-toggle">▾</span>
+                </button>
+                <div class="series-chapters"></div>
+            `;
+
+            const headerBtn = seriesWrapper.querySelector('.series-header');
+            const chaptersEl = seriesWrapper.querySelector('.series-chapters');
+            headerBtn.addEventListener('click', () => {
+                const expanded = seriesWrapper.classList.toggle('expanded');
+                headerBtn.setAttribute('aria-expanded', expanded.toString());
+            });
+
+            series.chapters.forEach((filename) => {
+                const chapterProgress = progressStore[filename];
+                const progressPercent = getProgressPercent(chapterProgress);
+                const chapterRow = document.createElement('div');
+                chapterRow.className = 'series-chapter';
+                chapterRow.innerHTML = `
+                    <div class="series-chapter-title">${filename}</div>
+                    <div class="series-chapter-meta">${formatProgressLabel(chapterProgress)}</div>
+                    <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
+                `;
+                chapterRow.addEventListener('click', () => openComicFromFolder(filename));
+                chaptersEl.appendChild(chapterRow);
+            });
+
+            allComicsListEl.appendChild(seriesWrapper);
+        });
+    }
+
     // Dropzone configuration
     if (window.Dropzone) Dropzone.autoDiscover = false;
     let dropzone = new Dropzone("#dropzone", {
@@ -410,22 +465,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const SMART_GAP_KEY = 'scrollSmartGap';
     const WEBTOON_DOCK_KEY = 'webtoonDockCollapsed';
     const CHAPTER_PROGRESS_KEY = 'comicChapterProgress';
+    const SETTINGS_KEY = 'comicReaderSettings';
+    const DEFAULT_SETTINGS = {
+        defaultMode: 'scroll',
+        autoAdvance: false
+    };
     const SCROLL_ZOOM_MIN = 0.1;
     const SCROLL_ZOOM_MAX = 2;
     const BASE_SCROLL_WIDTH_VW = 90;
-    const AUTO_ADVANCE_THRESHOLD = 300;
-    const AUTO_ADVANCE_DELAY = 1500;
+    const AUTO_ADVANCE_THRESHOLD = 400;
+    const AUTO_ADVANCE_DELAY = 1000;
+    const AUTO_ADVANCE_IDLE = 250;
 
-    let readingMode = localStorage.getItem(READER_MODE_KEY) === 'scroll' ? 'scroll' : 'paged';
+    let readerSettings = loadReaderSettings();
+    let readingMode = localStorage.getItem(READER_MODE_KEY) || readerSettings.defaultMode;
+    readingMode = readingMode === 'scroll' || readingMode === 'paged' ? readingMode : readerSettings.defaultMode;
     let scrollZoom = parseFloat(localStorage.getItem(SCROLL_ZOOM_KEY)) || 1;
     scrollZoom = clamp(scrollZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
     let smartGapEnabled = localStorage.getItem(SMART_GAP_KEY) === 'true';
     let dockCollapsed = localStorage.getItem(WEBTOON_DOCK_KEY) === 'true';
+    let autoAdvanceEnabled = Boolean(readerSettings.autoAdvance);
     let libraryComicList = [];
     let currentChapterIndex = -1;
     let currentChapterFromLibrary = false;
     let autoAdvanceTimer = null;
     let autoAdvanceVisible = false;
+    let scrollIdleTimer = null;
+    let lastScrollY = window.scrollY;
+    let dockAutoHidden = false;
+    let pendingScrollRestoreRatio = null;
+    let pendingChapterPrefs = null;
+    let scrollProgressTimer = null;
     let pageUrls = [];
     let pageLinks = [];
     let totalPages = 0;
@@ -486,6 +556,8 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDockState();
         }
 
+        initializeSettingsPanel();
+
         updateModeButtons();
         applyScrollZoom();
         updateZoomControls();
@@ -535,6 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nextChapterFloatBtn) {
             nextChapterFloatBtn.addEventListener('click', () => goToNextChapter());
         }
+        if (restartChapterBtn) {
+            restartChapterBtn.addEventListener('click', () => restartChapter());
+        }
         if (pagedImageLinkEl) {
             pagedImageLinkEl.addEventListener('click', (event) => {
                 if (!pageLinks.length) {
@@ -554,6 +629,42 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(updateDockPadding, 80);
         });
         window.addEventListener('scroll', handleWindowScroll, { passive: true });
+        window.addEventListener('beforeunload', () => saveCurrentChapterProgress());
+        if (scrollContainerEl) {
+            scrollContainerEl.addEventListener('click', handleScrollContainerTap);
+        }
+    }
+
+    function initializeSettingsPanel() {
+        if (defaultModeSelectEl) {
+            defaultModeSelectEl.value = readerSettings.defaultMode;
+            defaultModeSelectEl.addEventListener('change', () => {
+                readerSettings.defaultMode = defaultModeSelectEl.value === 'paged' ? 'paged' : 'scroll';
+                saveReaderSettings(readerSettings);
+            });
+        }
+        if (autoAdvanceToggleEl) {
+            autoAdvanceToggleEl.checked = Boolean(readerSettings.autoAdvance);
+            autoAdvanceToggleEl.addEventListener('change', () => {
+                readerSettings.autoAdvance = autoAdvanceToggleEl.checked;
+                autoAdvanceEnabled = readerSettings.autoAdvance;
+                saveReaderSettings(readerSettings);
+            });
+        }
+        if (settingsToggleBtn && settingsPanelEl) {
+            settingsToggleBtn.addEventListener('click', () => {
+                const isHidden = settingsPanelEl.style.display === 'none' || settingsPanelEl.style.display === '';
+                settingsPanelEl.style.display = isHidden ? 'flex' : 'none';
+            });
+        }
+        if (resetProgressBtn) {
+            resetProgressBtn.addEventListener('click', () => {
+                const confirmed = window.confirm('Reset all reading progress? This cannot be undone.');
+                if (confirmed) {
+                    resetAllProgress();
+                }
+            });
+        }
     }
 
     function updateDockState() {
@@ -571,6 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dockCollapsed = collapsed;
         localStorage.setItem(WEBTOON_DOCK_KEY, dockCollapsed.toString());
         updateDockState();
+        setDockAutoHidden(false);
         requestAnimationFrame(updateDockPadding);
     }
 
@@ -632,30 +744,71 @@ document.addEventListener('DOMContentLoaded', () => {
         button.style.display = visible ? 'inline-flex' : 'none';
     }
 
-    function getChapterProgress(filename) {
-        if (!filename) return null;
+    function loadProgressStore() {
         try {
-            const progress = JSON.parse(localStorage.getItem(CHAPTER_PROGRESS_KEY) || '{}');
-            return progress[filename] || null;
+            return JSON.parse(localStorage.getItem(CHAPTER_PROGRESS_KEY) || '{}');
         } catch (e) {
             console.error('Failed to read chapter progress:', e);
-            return null;
+            return {};
         }
     }
 
-    function saveChapterProgress(filename, pageIndex) {
-        if (!filename) return;
+    function saveProgressStore(progress) {
         try {
-            const progress = JSON.parse(localStorage.getItem(CHAPTER_PROGRESS_KEY) || '{}');
-            progress[filename] = {
-                mode: readingMode === 'scroll' ? 'webtoon' : 'paged',
-                pageIndex,
-                lastRead: Date.now()
-            };
             localStorage.setItem(CHAPTER_PROGRESS_KEY, JSON.stringify(progress));
         } catch (e) {
             console.error('Failed to save chapter progress:', e);
         }
+    }
+
+    function getChapterProgress(filename) {
+        if (!filename) return null;
+        const progress = loadProgressStore();
+        return progress[filename] || null;
+    }
+
+    function saveChapterProgress(filename, overrides = {}) {
+        if (!filename) return;
+
+        const progress = loadProgressStore();
+        const existing = progress[filename] || {};
+        const mode = overrides.mode || (readingMode === 'scroll' ? 'webtoon' : 'paged');
+        const pageIndex = typeof overrides.pageIndex === 'number'
+            ? overrides.pageIndex
+            : (mode === 'webtoon' ? currentScrollIndex : currentPageIndex);
+        const scrollRatio = typeof overrides.scrollRatio === 'number'
+            ? overrides.scrollRatio
+            : (mode === 'webtoon' ? getScrollRatio() : null);
+        const webtoonZoom = typeof overrides.webtoonZoom === 'number'
+            ? overrides.webtoonZoom
+            : (mode === 'webtoon' ? scrollZoom : existing.webtoonZoom);
+        const pagedZoom = typeof overrides.pagedZoom === 'number'
+            ? overrides.pagedZoom
+            : (mode === 'paged' ? 1 : existing.pagedZoom);
+
+        progress[filename] = {
+            ...existing,
+            mode,
+            pageIndex,
+            scrollRatio: scrollRatio != null ? clamp(scrollRatio, 0, 1) : null,
+            webtoonZoom,
+            pagedZoom,
+            lastRead: Date.now(),
+            pageCount: totalPages
+        };
+
+        saveProgressStore(progress);
+    }
+
+    function touchChapterProgress(filename, existingProgress) {
+        if (!filename) return;
+        saveChapterProgress(filename, {
+            mode: existingProgress?.mode || (readingMode === 'scroll' ? 'webtoon' : 'paged'),
+            pageIndex: typeof existingProgress?.pageIndex === 'number' ? existingProgress.pageIndex : currentPageIndex,
+            scrollRatio: typeof existingProgress?.scrollRatio === 'number' ? existingProgress.scrollRatio : undefined,
+            webtoonZoom: typeof existingProgress?.webtoonZoom === 'number' ? existingProgress.webtoonZoom : scrollZoom,
+            pagedZoom: typeof existingProgress?.pagedZoom === 'number' ? existingProgress.pagedZoom : 1
+        });
     }
 
     function goToNextChapter() {
@@ -671,9 +824,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetIndex = currentChapterIndex + offset;
         if (targetIndex < 0 || targetIndex >= libraryComicList.length) return;
 
-        const progressIndex = readingMode === 'scroll' ? currentScrollIndex : currentPageIndex;
-        saveChapterProgress(currentComicFilename, progressIndex);
-        saveLastPageRead(currentComicFilename, progressIndex);
+        saveCurrentChapterProgress();
+        pendingChapterPrefs = {
+            mode: readingMode,
+            webtoonZoom: scrollZoom
+        };
 
         const targetFilename = libraryComicList[targetIndex];
         if (!targetFilename) return;
@@ -681,26 +836,120 @@ document.addEventListener('DOMContentLoaded', () => {
         hideNextChapterFloat();
     }
 
+    function saveCurrentChapterProgress() {
+        if (!currentComicFilename) return;
+        const progressIndex = readingMode === 'scroll' ? currentScrollIndex : currentPageIndex;
+        saveLastPageRead(currentComicFilename, progressIndex);
+        if (readingMode === 'scroll') {
+            saveChapterProgress(currentComicFilename, {
+                pageIndex: progressIndex,
+                scrollRatio: getScrollRatio(),
+                webtoonZoom: scrollZoom
+            });
+        }
+    }
+
+    function restartChapter() {
+        if (!currentComicFilename) return;
+        clearChapterProgress(currentComicFilename);
+        currentPageIndex = 0;
+        currentScrollIndex = 0;
+        if (readingMode === 'scroll') {
+            scrollToScrollRatio(0);
+        } else {
+            renderPagedImage(0);
+        }
+        saveLastPageRead(currentComicFilename, 0);
+        updatePageIndicator();
+    }
+
     function handleWindowScroll() {
+        const currentY = window.scrollY;
+        const delta = currentY - lastScrollY;
+        lastScrollY = currentY;
+
         if (readingMode !== 'scroll') {
             hideNextChapterFloat();
+            cancelAutoAdvance();
             return;
         }
+
+        handleDockAutoHide(delta);
+        scheduleScrollProgressSave();
+        cancelAutoAdvance();
 
         const hasNext = currentChapterFromLibrary && currentChapterIndex >= 0 && currentChapterIndex < libraryComicList.length - 1;
         if (!hasNext || !scrollPageElements.length) {
             hideNextChapterFloat();
+            cancelAutoAdvance();
             return;
         }
 
+        if (isNearBottomOfChapter()) {
+            showNextChapterFloat();
+            scheduleAutoAdvanceAfterIdle();
+        } else {
+            hideNextChapterFloat();
+            cancelAutoAdvance();
+        }
+    }
+
+    function isNearBottomOfChapter() {
+        if (!scrollPageElements.length) return false;
         const lastPage = scrollPageElements[scrollPageElements.length - 1];
         const distanceToBottom = lastPage.getBoundingClientRect().bottom - window.innerHeight;
-        if (distanceToBottom <= AUTO_ADVANCE_THRESHOLD) {
-            showNextChapterFloat();
-            scheduleAutoAdvance();
-        } else {
+        return distanceToBottom <= AUTO_ADVANCE_THRESHOLD;
+    }
+
+    function scheduleAutoAdvanceAfterIdle() {
+        if (!autoAdvanceEnabled) {
             cancelAutoAdvance();
-            hideNextChapterFloat();
+            return;
+        }
+        if (scrollIdleTimer) {
+            clearTimeout(scrollIdleTimer);
+        }
+        scrollIdleTimer = setTimeout(() => {
+            scrollIdleTimer = null;
+            if (!isNearBottomOfChapter()) {
+                return;
+            }
+            if (autoAdvanceTimer) return;
+            autoAdvanceTimer = setTimeout(() => {
+                autoAdvanceTimer = null;
+                goToNextChapter();
+            }, AUTO_ADVANCE_DELAY);
+        }, AUTO_ADVANCE_IDLE);
+    }
+
+    function handleDockAutoHide(delta) {
+        if (!webtoonDockEl) return;
+        if (Math.abs(delta) < 6) return;
+        if (delta > 0) {
+            setDockAutoHidden(true);
+        } else if (delta < 0) {
+            setDockAutoHidden(false);
+        }
+    }
+
+    function setDockAutoHidden(hidden) {
+        if (!webtoonDockEl) return;
+        dockAutoHidden = hidden;
+        webtoonDockEl.classList.toggle('auto-hidden', dockAutoHidden);
+    }
+
+    function handleScrollContainerTap(event) {
+        if (readingMode !== 'scroll') return;
+        if (event.target.closest('button, a, input, select, label, .webtoon-dock')) {
+            return;
+        }
+        const xRatio = event.clientX / window.innerWidth;
+        if (xRatio > 0.25 && xRatio < 0.75) {
+            if (dockAutoHidden) {
+                setDockAutoHidden(false);
+                return;
+            }
+            setDockCollapsed(!dockCollapsed);
         }
     }
 
@@ -734,6 +983,10 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(autoAdvanceTimer);
             autoAdvanceTimer = null;
         }
+        if (scrollIdleTimer) {
+            clearTimeout(scrollIdleTimer);
+            scrollIdleTimer = null;
+        }
     }
 
     function resetReaderView() {
@@ -747,10 +1000,17 @@ document.addEventListener('DOMContentLoaded', () => {
         scrollEdgeData = [];
         visibilityRatios = new Map();
         scrollModeReady = false;
+        pendingScrollRestoreRatio = null;
+        pendingChapterPrefs = null;
+        dockAutoHidden = false;
 
         if (scrollSaveTimeout) {
             clearTimeout(scrollSaveTimeout);
             scrollSaveTimeout = null;
+        }
+        if (scrollProgressTimer) {
+            clearTimeout(scrollProgressTimer);
+            scrollProgressTimer = null;
         }
 
         clearScrollObservers();
@@ -773,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (webtoonDockEl) {
             webtoonDockEl.style.display = 'none';
+            webtoonDockEl.classList.remove('auto-hidden');
         }
         hideNextChapterFloat();
         if (readerToolbarHome && readerToolbarEl) {
@@ -808,12 +1069,34 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeGallery();
         const chapterProgress = getChapterProgress(currentComicFilename);
         const lastPage = getLastPageRead(currentComicFilename);
+        const fallbackMode = pendingChapterPrefs?.mode || readingMode || readerSettings.defaultMode;
+        const resolvedMode = chapterProgress?.mode
+            ? (chapterProgress.mode === 'webtoon' ? 'scroll' : 'paged')
+            : fallbackMode;
+        readingMode = resolvedMode === 'scroll' || resolvedMode === 'paged' ? resolvedMode : readerSettings.defaultMode;
+        localStorage.setItem(READER_MODE_KEY, readingMode);
+
+        const savedZoom = chapterProgress?.webtoonZoom;
+        const fallbackZoom = pendingChapterPrefs?.webtoonZoom;
+        if (readingMode === 'scroll') {
+            if (typeof savedZoom === 'number') {
+                scrollZoom = clamp(savedZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
+            } else if (typeof fallbackZoom === 'number') {
+                scrollZoom = clamp(fallbackZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
+            }
+        }
+
         const startIndex = typeof chapterProgress?.pageIndex === 'number' ? chapterProgress.pageIndex : lastPage;
         currentPageIndex = clamp(startIndex, 0, totalPages - 1);
         currentScrollIndex = currentPageIndex;
+        if (readingMode === 'scroll' && typeof chapterProgress?.scrollRatio === 'number') {
+            pendingScrollRestoreRatio = clamp(chapterProgress.scrollRatio, 0, 1);
+        }
         applyReadingMode(true);
         updatePageIndicator();
         updateChapterButtons();
+        touchChapterProgress(currentComicFilename, chapterProgress);
+        pendingChapterPrefs = null;
 
         setTimeout(() => {
             generateThumbnailFromFirstImage();
@@ -934,6 +1217,9 @@ document.addEventListener('DOMContentLoaded', () => {
         readingMode = mode;
         localStorage.setItem(READER_MODE_KEY, readingMode);
         applyReadingMode(true);
+        if (currentComicFilename) {
+            saveChapterProgress(currentComicFilename, { mode: readingMode });
+        }
     }
 
     function applyReadingMode(shouldJump) {
@@ -945,6 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (scrollContainerEl) scrollContainerEl.style.display = 'block';
             if (smartGapToggleEl) smartGapToggleEl.disabled = false;
 
+            lastScrollY = window.scrollY;
             activateWebtoonDock();
             renderScrollMode(shouldJump);
         } else {
@@ -970,12 +1257,14 @@ document.addEventListener('DOMContentLoaded', () => {
         dockContentEl.appendChild(readerToolbarEl);
         readerToolbarEl.style.display = 'flex';
         updateDockState();
+        setDockAutoHidden(false);
         requestAnimationFrame(updateDockPadding);
     }
 
     function deactivateWebtoonDock() {
         if (webtoonDockEl) {
             webtoonDockEl.style.display = 'none';
+            webtoonDockEl.classList.remove('auto-hidden');
         }
         if (readerToolbarHome && readerToolbarEl) {
             if (readerToolbarAnchor) {
@@ -1026,7 +1315,12 @@ document.addEventListener('DOMContentLoaded', () => {
         initScrollObserver();
 
         if (shouldJump) {
-            scrollToPageIndex(currentScrollIndex, false);
+            if (pendingScrollRestoreRatio != null) {
+                restoreScrollRatio(pendingScrollRestoreRatio);
+                pendingScrollRestoreRatio = null;
+            } else {
+                scrollToPageIndex(currentScrollIndex, false);
+            }
         }
     }
 
@@ -1159,6 +1453,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getScrollRatio() {
+        if (!scrollContainerEl) return 0;
+        const containerRect = scrollContainerEl.getBoundingClientRect();
+        const containerTop = containerRect.top + window.pageYOffset;
+        const containerHeight = scrollContainerEl.scrollHeight || scrollContainerEl.offsetHeight;
+        const maxScroll = containerHeight - window.innerHeight;
+        if (maxScroll <= 0) {
+            return 0;
+        }
+        const scrollTop = window.pageYOffset - containerTop;
+        return clamp(scrollTop / maxScroll, 0, 1);
+    }
+
+    function scrollToScrollRatio(ratio) {
+        if (!scrollContainerEl) return;
+        const containerRect = scrollContainerEl.getBoundingClientRect();
+        const containerTop = containerRect.top + window.pageYOffset;
+        const containerHeight = scrollContainerEl.scrollHeight || scrollContainerEl.offsetHeight;
+        const maxScroll = containerHeight - window.innerHeight;
+        if (maxScroll <= 0) {
+            return;
+        }
+        const targetScroll = containerTop + (clamp(ratio, 0, 1) * maxScroll);
+        window.scrollTo({ top: targetScroll, behavior: 'auto' });
+    }
+
+    function restoreScrollRatio(ratio) {
+        requestAnimationFrame(() => {
+            scrollToScrollRatio(ratio);
+            setTimeout(() => scrollToScrollRatio(ratio), 250);
+        });
+    }
+
     function goToRelativePage(delta) {
         if (totalPages === 0) return;
 
@@ -1216,6 +1543,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function adjustScrollZoom(delta) {
         scrollZoom = clamp(scrollZoom + delta, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
         applyScrollZoom();
+        if (readingMode === 'scroll') {
+            saveChapterProgress(currentComicFilename, {
+                pageIndex: currentScrollIndex,
+                scrollRatio: getScrollRatio(),
+                webtoonZoom: scrollZoom
+            });
+        }
     }
 
     function scheduleSaveProgress(index) {
@@ -1225,6 +1559,19 @@ document.addEventListener('DOMContentLoaded', () => {
         scrollSaveTimeout = setTimeout(() => {
             saveLastPageRead(currentComicFilename, index);
         }, 200);
+    }
+
+    function scheduleScrollProgressSave() {
+        if (!currentComicFilename) return;
+        if (scrollProgressTimer) {
+            clearTimeout(scrollProgressTimer);
+        }
+        scrollProgressTimer = setTimeout(() => {
+            saveChapterProgress(currentComicFilename, {
+                pageIndex: currentScrollIndex,
+                scrollRatio: getScrollRatio()
+            });
+        }, 300);
     }
 
     function setImageSource(img) {
@@ -1399,7 +1746,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 thumbnail: finalThumbnail
             };
             localStorage.setItem('comic_reader_userpref', JSON.stringify(readingHistory));
-            saveChapterProgress(filename, pageIndex);
+            saveChapterProgress(filename, { pageIndex });
         } catch (e) {
             console.error('Failed to save reading history:', e);
         }
@@ -1474,34 +1821,44 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadRecentComics() {
         try {
             const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
+            const progressStore = loadProgressStore();
 
-            const recentComics = Object.entries(readingHistory)
-                .sort((a, b) => b[1].timestamp - a[1].timestamp)
+            const recentComics = Object.entries(progressStore)
+                .sort((a, b) => (b[1]?.lastRead || 0) - (a[1]?.lastRead || 0))
                 .slice(0, 5);
 
             recentComicsListEl.innerHTML = '';
 
             if (recentComics.length === 0) {
+                if (recentComicsEl) {
+                    recentComicsEl.style.display = 'none';
+                }
                 return;
             }
+            if (recentComicsEl) {
+                recentComicsEl.style.display = 'block';
+            }
 
-            for (const [filename, data] of recentComics) {
+            for (const [filename, progress] of recentComics) {
                 const item = document.createElement('div');
                 item.className = 'recent-comic-item';
 
-                const iconContent = data.thumbnail
-                    ? `<img src="${data.thumbnail}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">`
+                const thumb = readingHistory[filename]?.thumbnail;
+                const iconContent = thumb
+                    ? `<img src="${thumb}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">`
                     : `<svg viewBox="0 0 16 16">
                         <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 12.5 2h-9zm6.854 6.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L8.793 9H5.5a.5.5 0 0 1 0-1h3.293L6.646 5.854a.5.5 0 1 1 .708-.708l3 3z"/>
                     </svg>`;
 
+                const progressPercent = getProgressPercent(progress);
                 item.innerHTML = `
                     <div class="recent-comic-icon">
                         ${iconContent}
                     </div>
                     <div class="recent-comic-info">
                         <div class="recent-comic-name">${filename}</div>
-                        <div class="recent-comic-meta">Page ${data.last_page + 1} • ${formatTimestamp(data.timestamp)}</div>
+                        <div class="recent-comic-meta">${formatProgressLabel(progress)} • ${formatTimestamp(progress.lastRead)}</div>
+                        <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
                     </div>
                 `;
                 item.addEventListener('click', () => openComicFromFolder(filename));
@@ -1517,6 +1874,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (readingHistory[filename]) {
             delete readingHistory[filename];
             localStorage.setItem('comic_reader_userpref', JSON.stringify(readingHistory));
+            clearChapterProgress(filename);
             
             // Refresh UI
             await loadRecentComics();
@@ -1571,6 +1929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatTimestamp(timestamp) {
+        if (!timestamp) return 'Never';
         const now = Date.now();
         const diff = now - timestamp;
         const seconds = Math.floor(diff / 1000);
@@ -1584,11 +1943,128 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'Just now';
     }
 
+    function loadReaderSettings() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+            const merged = {
+                ...DEFAULT_SETTINGS,
+                ...stored
+            };
+            if (merged.defaultMode !== 'scroll' && merged.defaultMode !== 'paged') {
+                merged.defaultMode = DEFAULT_SETTINGS.defaultMode;
+            }
+            return merged;
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+            return { ...DEFAULT_SETTINGS };
+        }
+    }
+
+    function saveReaderSettings(settings) {
+        try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        } catch (e) {
+            console.error('Failed to save settings:', e);
+        }
+    }
+
+    function resetAllProgress() {
+        localStorage.removeItem(CHAPTER_PROGRESS_KEY);
+        loadRecentComics();
+        loadAllComics();
+    }
+
+    function clearChapterProgress(filename) {
+        if (!filename) return;
+        const progress = loadProgressStore();
+        if (progress[filename]) {
+            delete progress[filename];
+            saveProgressStore(progress);
+        }
+    }
+
+    function getProgressPercent(progress) {
+        if (!progress) return 0;
+        if (typeof progress.scrollRatio === 'number') {
+            return Math.round(progress.scrollRatio * 100);
+        }
+        if (typeof progress.pageIndex === 'number' && typeof progress.pageCount === 'number' && progress.pageCount > 0) {
+            return Math.round(((progress.pageIndex + 1) / progress.pageCount) * 100);
+        }
+        return 0;
+    }
+
+    function formatProgressLabel(progress) {
+        if (!progress) return 'Not started';
+        if (progress.mode === 'webtoon' && typeof progress.scrollRatio === 'number') {
+            return `${Math.round(progress.scrollRatio * 100)}% read`;
+        }
+        if (typeof progress.pageIndex === 'number') {
+            return `Page ${progress.pageIndex + 1}`;
+        }
+        return 'In progress';
+    }
+
+    function getLatestSeriesProgress(chapters, progressStore) {
+        let latest = null;
+        chapters.forEach((filename) => {
+            const progress = progressStore[filename];
+            if (!progress || !progress.lastRead) return;
+            if (!latest || progress.lastRead > latest.progress.lastRead) {
+                latest = { filename, progress };
+            }
+        });
+        return latest;
+    }
+
+    function parseSeriesKey(filename) {
+        if (!filename) return '';
+        let key = filename.toLowerCase();
+        key = key.replace(/\.[^.]+$/, '');
+        key = key.replace(/\[[^\]]*\]|\([^\)]*\)/g, ' ');
+        key = key.replace(/\b(?:digital|webrip|web|scan|scans|raw|color|fixed|fix|date)\b/gi, ' ');
+        key = key.replace(/\b(19|20)\d{2}\b/g, ' ');
+        key = key.replace(/\b(?:chapter|chap|ch|c|vol|volume|v)\s*0*\d+\b/gi, ' ');
+        key = key.replace(/#\s*\d+\b/gi, ' ');
+        key = key.replace(/[_\-]+/g, ' ');
+        key = key.replace(/\s+/g, ' ').trim();
+        return key || filename.toLowerCase();
+    }
+
+    function formatSeriesTitle(filename, fallback) {
+        if (!filename) return fallback || '';
+        let title = filename.replace(/\.[^.]+$/, '');
+        title = title.replace(/\[[^\]]*\]|\([^\)]*\)/g, ' ');
+        title = title.replace(/\b(?:digital|webrip|web|scan|scans|raw|color|fixed|fix|date)\b/gi, ' ');
+        title = title.replace(/\b(19|20)\d{2}\b/g, ' ');
+        title = title.replace(/\b(?:chapter|chap|ch|c|vol|volume|v)\s*0*\d+\b/gi, ' ');
+        title = title.replace(/#\s*\d+\b/gi, ' ');
+        title = title.replace(/[_\-]+/g, ' ');
+        title = title.replace(/\s+/g, ' ').trim();
+        return title || fallback || '';
+    }
+
     function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
     }
 
     function naturalCompare(a, b) {
-        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        const ax = String(a).toLowerCase().match(/\d+|\D+/g) || [];
+        const bx = String(b).toLowerCase().match(/\d+|\D+/g) || [];
+        const len = Math.min(ax.length, bx.length);
+        for (let i = 0; i < len; i++) {
+            const aChunk = ax[i];
+            const bChunk = bx[i];
+            const aNum = Number(aChunk);
+            const bNum = Number(bChunk);
+            const bothNumeric = !Number.isNaN(aNum) && !Number.isNaN(bNum);
+            if (bothNumeric && aNum !== bNum) {
+                return aNum - bNum;
+            }
+            if (!bothNumeric && aChunk !== bChunk) {
+                return aChunk.localeCompare(bChunk);
+            }
+        }
+        return ax.length - bx.length;
     }
 });
