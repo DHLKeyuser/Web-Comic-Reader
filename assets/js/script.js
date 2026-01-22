@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const zoomInBtn = document.getElementById('zoomInBtn');
     const zoomLevelEl = document.getElementById('zoomLevel');
     const smartGapToggleEl = document.getElementById('smartGapToggle');
+    const webtoonDockEl = document.getElementById('webtoonDock');
+    const dockToggleBtn = document.getElementById('dockToggleBtn');
+    const dockPageIndicatorEl = document.getElementById('dockPageIndicator');
+    const dockContentEl = document.getElementById('webtoonDockContent');
     const modeButtons = document.querySelectorAll('[data-reading-mode]');
 
     let comicsDirectoryHandle = null;
@@ -396,7 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const READER_MODE_KEY = 'readerMode';
     const SCROLL_ZOOM_KEY = 'scrollZoom';
     const SMART_GAP_KEY = 'scrollSmartGap';
-    const SCROLL_ZOOM_MIN = 0.5;
+    const WEBTOON_DOCK_KEY = 'webtoonDockCollapsed';
+    const SCROLL_ZOOM_MIN = 0.1;
     const SCROLL_ZOOM_MAX = 2;
     const BASE_SCROLL_WIDTH_VW = 90;
 
@@ -404,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let scrollZoom = parseFloat(localStorage.getItem(SCROLL_ZOOM_KEY)) || 1;
     scrollZoom = clamp(scrollZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
     let smartGapEnabled = localStorage.getItem(SMART_GAP_KEY) === 'true';
+    let dockCollapsed = localStorage.getItem(WEBTOON_DOCK_KEY) === 'true';
     let pageUrls = [];
     let pageLinks = [];
     let totalPages = 0;
@@ -417,6 +423,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let visibilityRatios = new Map();
     let scrollModeReady = false;
     let scrollSaveTimeout = null;
+    const readerToolbarHome = readerToolbarEl ? readerToolbarEl.parentNode : null;
+    const readerToolbarAnchor = readerMetaEl || null;
 
     initializeReaderControls();
 
@@ -456,6 +464,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (smartGapToggleEl) {
             smartGapToggleEl.checked = smartGapEnabled;
         }
+        if (webtoonDockEl) {
+            updateDockState();
+        }
 
         updateModeButtons();
         applyScrollZoom();
@@ -486,6 +497,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 applySmartGapState();
             });
         }
+        if (dockToggleBtn) {
+            dockToggleBtn.addEventListener('click', () => {
+                setDockCollapsed(!dockCollapsed);
+            });
+        }
         if (pagedImageLinkEl) {
             pagedImageLinkEl.addEventListener('click', (event) => {
                 if (!pageLinks.length) {
@@ -500,6 +516,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         document.addEventListener('keydown', handleReaderKeydown);
+        window.addEventListener('resize', () => updateDockPadding(), { passive: true });
+        window.addEventListener('orientationchange', () => {
+            setTimeout(updateDockPadding, 80);
+        });
+    }
+
+    function updateDockState() {
+        if (!webtoonDockEl) return;
+
+        webtoonDockEl.classList.toggle('collapsed', dockCollapsed);
+        webtoonDockEl.classList.toggle('expanded', !dockCollapsed);
+        if (dockToggleBtn) {
+            dockToggleBtn.setAttribute('aria-expanded', (!dockCollapsed).toString());
+            dockToggleBtn.setAttribute('aria-label', dockCollapsed ? 'Expand Webtoon dock' : 'Collapse Webtoon dock');
+        }
+    }
+
+    function setDockCollapsed(collapsed) {
+        dockCollapsed = collapsed;
+        localStorage.setItem(WEBTOON_DOCK_KEY, dockCollapsed.toString());
+        updateDockState();
+        requestAnimationFrame(updateDockPadding);
+    }
+
+    function updateDockPadding() {
+        if (!scrollContainerEl) return;
+        if (readingMode !== 'scroll' || !webtoonDockEl || webtoonDockEl.style.display === 'none') {
+            scrollContainerEl.style.paddingBottom = '';
+            return;
+        }
+
+        const dockRect = webtoonDockEl.getBoundingClientRect();
+        let safeHeight = dockRect.height;
+
+        if (dockToggleBtn) {
+            const toggleRect = dockToggleBtn.getBoundingClientRect();
+            safeHeight = Math.max(safeHeight, toggleRect.height + 8);
+        }
+
+        scrollContainerEl.style.paddingBottom = `${Math.ceil(safeHeight)}px`;
     }
 
     function resetReaderView() {
@@ -535,6 +591,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (scrollContainerEl) {
             scrollContainerEl.style.display = 'none';
+            scrollContainerEl.style.paddingBottom = '';
+        }
+        if (webtoonDockEl) {
+            webtoonDockEl.style.display = 'none';
+        }
+        if (readerToolbarHome && readerToolbarEl) {
+            if (readerToolbarAnchor) {
+                readerToolbarHome.insertBefore(readerToolbarEl, readerToolbarAnchor);
+            } else {
+                readerToolbarHome.appendChild(readerToolbarEl);
+            }
         }
         if (readerMetaEl) {
             readerMetaEl.textContent = '';
@@ -696,6 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (scrollContainerEl) scrollContainerEl.style.display = 'block';
             if (smartGapToggleEl) smartGapToggleEl.disabled = false;
 
+            activateWebtoonDock();
             renderScrollMode(shouldJump);
         } else {
             outputElement.classList.remove('scroll-mode');
@@ -703,11 +771,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pagedContainerEl) pagedContainerEl.style.display = 'block';
             if (smartGapToggleEl) smartGapToggleEl.disabled = true;
 
+            deactivateWebtoonDock();
             clearScrollObservers();
             renderPagedImage(currentPageIndex);
         }
 
         updateZoomControls();
+    }
+
+    function activateWebtoonDock() {
+        if (!webtoonDockEl || !dockContentEl || !readerToolbarEl) {
+            return;
+        }
+
+        webtoonDockEl.style.display = 'flex';
+        dockContentEl.appendChild(readerToolbarEl);
+        readerToolbarEl.style.display = 'flex';
+        updateDockState();
+        requestAnimationFrame(updateDockPadding);
+    }
+
+    function deactivateWebtoonDock() {
+        if (webtoonDockEl) {
+            webtoonDockEl.style.display = 'none';
+        }
+        if (readerToolbarHome && readerToolbarEl) {
+            if (readerToolbarAnchor) {
+                readerToolbarHome.insertBefore(readerToolbarEl, readerToolbarAnchor);
+            } else {
+                readerToolbarHome.appendChild(readerToolbarEl);
+            }
+        }
+        if (scrollContainerEl) {
+            scrollContainerEl.style.paddingBottom = '';
+        }
     }
 
     function updateModeButtons() {
@@ -853,14 +950,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePageIndicator() {
-        if (!pageIndicatorEl) return;
-        if (totalPages === 0) {
-            pageIndicatorEl.textContent = '0 / 0';
-            return;
-        }
-
         const index = readingMode === 'scroll' ? currentScrollIndex : currentPageIndex;
-        pageIndicatorEl.textContent = `${index + 1} / ${totalPages}`;
+        const label = totalPages === 0 ? '0 / 0' : `${index + 1} / ${totalPages}`;
+        if (pageIndicatorEl) {
+            pageIndicatorEl.textContent = label;
+        }
+        if (dockPageIndicatorEl) {
+            dockPageIndicatorEl.textContent = label;
+        }
     }
 
     function scrollToPageIndex(index, useSmooth) {

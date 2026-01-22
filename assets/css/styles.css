@@ -704,6 +704,96 @@ footer a:hover {
     padding: 0;
 }
 
+.webtoon-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    border-top: 1px solid var(--border);
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 -6px 20px rgba(0,0,0,.12);
+    transition: height 150ms ease;
+    overflow: visible;
+}
+
+@media (prefers-color-scheme: dark) {
+    .webtoon-dock {
+        background: rgba(18,20,24,.92);
+    }
+}
+
+.webtoon-dock.collapsed {
+    height: 20px;
+}
+
+.webtoon-dock.expanded {
+    height: auto;
+}
+
+.webtoon-dock-handle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+    min-height: 20px;
+    gap: 12px;
+}
+
+.webtoon-dock.collapsed .webtoon-dock-handle {
+    justify-content: center;
+}
+
+.dock-page-indicator {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.dock-toggle-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 150ms ease, background .2s;
+    margin: -12px 0;
+}
+
+.dock-toggle-btn:hover {
+    background: var(--bg);
+}
+
+.dock-toggle-icon {
+    transition: transform 150ms ease;
+}
+
+.webtoon-dock.collapsed .dock-toggle-icon {
+    transform: rotate(180deg);
+}
+
+.webtoon-dock-content {
+    width: 100%;
+    padding: 8px 16px 12px;
+}
+
+.webtoon-dock-content .reader-toolbar {
+    margin: 0;
+}
+
+.webtoon-dock.collapsed .webtoon-dock-content {
+    display: none;
+}
+
 @media only screen and (max-width: 768px) {
     .reader-toolbar {
         gap: 10px;
