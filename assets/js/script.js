@@ -61,8 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load all the archive formats
     loadArchiveFormats(['rar', 'zip', 'tar']);
 
-    initializeReaderControls();
-
     // click on collapsed footer to expand
     document.querySelector('.footer-collapsed').addEventListener('click', async () => {
         wrapElement.classList.remove('collapsed');
@@ -419,6 +417,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let visibilityRatios = new Map();
     let scrollModeReady = false;
     let scrollSaveTimeout = null;
+
+    initializeReaderControls();
 
     function openComic(file) {
         outputElement.style.display = 'none';
