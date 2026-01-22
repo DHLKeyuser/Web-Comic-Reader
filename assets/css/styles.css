@@ -701,7 +701,20 @@ footer a:hover {
 }
 
 #output.scroll-mode .scroll-container {
+    gap: 0;
     padding: 0;
+    line-height: 0;
+}
+
+#output.scroll-mode .scroll-page {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    line-height: 0;
+}
+
+#output.scroll-mode .scroll-page--tight {
+    margin-bottom: 0;
 }
 
 .webtoon-dock {
