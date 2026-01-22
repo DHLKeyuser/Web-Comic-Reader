@@ -98,7 +98,39 @@
         <div class="footer-collapsed" id="footerCollapsedText">Show library</div>
     </div>
 
-    <div id="output"></div>
+    <div id="output">
+        <div id="readerToolbar" class="reader-toolbar" style="display:none;">
+            <div class="reader-toolbar-group mode-group">
+                <span class="toolbar-label">Reading Mode</span>
+                <div class="mode-toggle" role="group" aria-label="Reading mode">
+                    <button type="button" class="mode-btn" data-reading-mode="paged" aria-pressed="false">Paged</button>
+                    <button type="button" class="mode-btn" data-reading-mode="scroll" aria-pressed="false">Webtoon / Scroll</button>
+                </div>
+            </div>
+            <div class="reader-toolbar-group nav-group">
+                <button type="button" id="prevPageBtn" class="reader-btn" aria-label="Previous page">Prev</button>
+                <div id="pageIndicator" class="page-indicator">0 / 0</div>
+                <button type="button" id="nextPageBtn" class="reader-btn" aria-label="Next page">Next</button>
+            </div>
+            <div class="reader-toolbar-group zoom-group">
+                <button type="button" id="zoomOutBtn" class="reader-btn" aria-label="Zoom out">-</button>
+                <span id="zoomLevel" class="zoom-level">100%</span>
+                <button type="button" id="zoomInBtn" class="reader-btn" aria-label="Zoom in">+</button>
+            </div>
+            <label class="reader-toolbar-group smart-gap-toggle">
+                <input type="checkbox" id="smartGapToggle">
+                <span>Smart gap removal</span>
+            </label>
+        </div>
+        <div id="readerMeta" class="reader-meta"></div>
+        <div id="pagedContainer" class="paged-container">
+            <a id="pagedImageLink" class="paged-image-link" href="#" aria-label="Open page gallery">
+                <img id="pagedImage" class="paged-image" alt="">
+            </a>
+            <div id="lightboxLinks" class="lightbox-links" aria-hidden="true"></div>
+        </div>
+        <div id="scrollContainer" class="scroll-container" style="display:none;"></div>
+    </div>
 
     <script src="./assets/js/uncompress/uncompress.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lightgallery.js@1.4.0/dist/js/lightgallery.min.js"></script>

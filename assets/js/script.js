@@ -23,6 +23,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const browserNoticeEl = document.getElementById('browserNotice');
     const changeFolderBtn = document.getElementById('changeFolderBtn');
     const currentFolderNameEl = document.getElementById('currentFolderName');
+    const readerToolbarEl = document.getElementById('readerToolbar');
+    const readerMetaEl = document.getElementById('readerMeta');
+    const pagedContainerEl = document.getElementById('pagedContainer');
+    const pagedImageLinkEl = document.getElementById('pagedImageLink');
+    const pagedImageEl = document.getElementById('pagedImage');
+    const lightboxLinksEl = document.getElementById('lightboxLinks');
+    const scrollContainerEl = document.getElementById('scrollContainer');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    const pageIndicatorEl = document.getElementById('pageIndicator');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomLevelEl = document.getElementById('zoomLevel');
+    const smartGapToggleEl = document.getElementById('smartGapToggle');
+    const modeButtons = document.querySelectorAll('[data-reading-mode]');
 
     let comicsDirectoryHandle = null;
     let isLibraryMode = false;
@@ -45,6 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load all the archive formats
     loadArchiveFormats(['rar', 'zip', 'tar']);
+
+    initializeReaderControls();
 
     // click on collapsed footer to expand
     document.querySelector('.footer-collapsed').addEventListener('click', async () => {
@@ -378,72 +395,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentComicFilename = '';
     let lightGalleryInstance = null;
-    let hasInitializedGallery = false;
+    const READER_MODE_KEY = 'readerMode';
+    const SCROLL_ZOOM_KEY = 'scrollZoom';
+    const SMART_GAP_KEY = 'scrollSmartGap';
+    const SCROLL_ZOOM_MIN = 0.5;
+    const SCROLL_ZOOM_MAX = 2;
+    const BASE_SCROLL_WIDTH_VW = 90;
+
+    let readingMode = localStorage.getItem(READER_MODE_KEY) === 'scroll' ? 'scroll' : 'paged';
+    let scrollZoom = parseFloat(localStorage.getItem(SCROLL_ZOOM_KEY)) || 1;
+    scrollZoom = clamp(scrollZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
+    let smartGapEnabled = localStorage.getItem(SMART_GAP_KEY) === 'true';
+    let pageUrls = [];
+    let pageLinks = [];
+    let totalPages = 0;
+    let pagesLoaded = 0;
+    let currentPageIndex = 0;
+    let currentScrollIndex = 0;
+    let scrollPageElements = [];
+    let scrollEdgeData = [];
+    let lazyObserver = null;
+    let visibilityObserver = null;
+    let visibilityRatios = new Map();
+    let scrollModeReady = false;
+    let scrollSaveTimeout = null;
 
     function openComic(file) {
         outputElement.style.display = 'none';
         wrapElement.classList.add('collapsed');
         collapseBtn.classList.add('show');
         currentComicFilename = file.name;
-
-        // reset gallery initialization flag
-        hasInitializedGallery = false;
-
-        // init the gallery plugin, when there is a first click on a image
-        const clickHandler = function(event) {
-            const target = event.target.closest('#comicImg');
-            if (!target || hasInitializedGallery) return;
-
-            event.preventDefault();
-            hasInitializedGallery = true;
-
-            // initialize gallery
-            lightGalleryInstance = lightGallery(outputElement, {
-                selector: 'a',
-                zoom: true,
-                fullScreen: true,
-                download: false,
-                enableTouch: true,
-                thumbnail: true,
-                animateThumb: true,
-                showThumbByDefault: true,
-                autoplay: false,
-                autoplayControls: true,
-                rotate: true
-            });
-
-            // track page changes
-            outputElement.addEventListener('onAfterSlide', function(event) {
-                const index = event.detail.index;
-
-                saveLastPageRead(currentComicFilename, index);
-
-                // clear previous highlight and apply to current page
-                document.querySelectorAll('#output a.last-read').forEach(a => {
-                    a.classList.remove('last-read');
-                });
-
-                const images = document.querySelectorAll('#output a');
-                if (images[index]) {
-                    images[index].classList.add('last-read');
-                }
-            });
-
-            // trigger click to open gallery
-            target.click();
-
-            // remove the click handler after first use
-            document.removeEventListener('click', clickHandler);
-        };
-
-        // add click handler for first image click
-        document.addEventListener('click', clickHandler);
-
-        // Update progress text
         progressTextElement.innerHTML = "Reading 0/0 pages";
-
-        // show loading
         sePreConElement.style.display = 'block';
+
+        if (readerToolbarEl) {
+            readerToolbarEl.style.display = 'none';
+        }
 
         // destroy previous lightGallery instance
         if (lightGalleryInstance) {
@@ -453,80 +440,611 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // clear previous blobs
         clearBlobs();
-
-        // clear previous output data
-        outputElement.innerHTML = '';
-
-        // clear previous highlight
-        document.querySelectorAll('#output a.last-read').forEach(a => {
-            a.classList.remove('last-read');
-        });
+        resetReaderView();
 
         // Open the file as an archive
         archiveOpenFile(file, (archive, err) => {
             if (archive) {
-                outputElement.innerHTML = `<b>${archive.file_name}</b><br><i>Click on the image to enlarge</i><br><br>`;
-                readContents(archive);
+                readContents(archive, archive.file_name);
             } else {
-                outputElement.innerHTML = `<span style="color: #ef4444;">${err}</span><br>`;
-
-                // hide loading
-                sePreConElement.style.display = 'none';
-
-                // show output box
-                outputElement.style.display = 'block';
+                showReaderError(err);
             }
         });
     }
 
-    async function readContents(archive) {
-        const entries = archive.entries;
-        const promises = [];
+    function initializeReaderControls() {
+        if (smartGapToggleEl) {
+            smartGapToggleEl.checked = smartGapEnabled;
+        }
 
-        for (let i = 0; i < entries.length; i++) {
-            const filename = entries[i].name;
-            if (getExt(filename) !== '') {
-                promises.push(createBlobAsync(entries[i], i, entries.length));
-            }
+        updateModeButtons();
+        applyScrollZoom();
+        updateZoomControls();
+
+        modeButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setReadingMode(btn.dataset.readingMode);
+            });
+        });
+
+        if (prevPageBtn) {
+            prevPageBtn.addEventListener('click', () => goToRelativePage(-1));
+        }
+        if (nextPageBtn) {
+            nextPageBtn.addEventListener('click', () => goToRelativePage(1));
+        }
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', () => adjustScrollZoom(-0.1));
+        }
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', () => adjustScrollZoom(0.1));
+        }
+        if (smartGapToggleEl) {
+            smartGapToggleEl.addEventListener('change', () => {
+                smartGapEnabled = smartGapToggleEl.checked;
+                localStorage.setItem(SMART_GAP_KEY, smartGapEnabled.toString());
+                applySmartGapState();
+            });
+        }
+        if (pagedImageLinkEl) {
+            pagedImageLinkEl.addEventListener('click', (event) => {
+                if (!pageLinks.length) {
+                    return;
+                }
+                event.preventDefault();
+                const link = pageLinks[currentPageIndex];
+                if (link) {
+                    link.click();
+                }
+            });
+        }
+
+        document.addEventListener('keydown', handleReaderKeydown);
+    }
+
+    function resetReaderView() {
+        pageUrls = [];
+        pageLinks = [];
+        totalPages = 0;
+        pagesLoaded = 0;
+        currentPageIndex = 0;
+        currentScrollIndex = 0;
+        scrollPageElements = [];
+        scrollEdgeData = [];
+        visibilityRatios = new Map();
+        scrollModeReady = false;
+
+        if (scrollSaveTimeout) {
+            clearTimeout(scrollSaveTimeout);
+            scrollSaveTimeout = null;
+        }
+
+        clearScrollObservers();
+
+        if (lightboxLinksEl) {
+            lightboxLinksEl.innerHTML = '';
+        }
+        if (scrollContainerEl) {
+            scrollContainerEl.innerHTML = '';
+        }
+        if (pagedImageEl) {
+            pagedImageEl.removeAttribute('src');
+        }
+        if (pagedContainerEl) {
+            pagedContainerEl.style.display = 'block';
+        }
+        if (scrollContainerEl) {
+            scrollContainerEl.style.display = 'none';
+        }
+        if (readerMetaEl) {
+            readerMetaEl.textContent = '';
+        }
+
+        outputElement.classList.remove('scroll-mode');
+        updatePageIndicator();
+    }
+
+    function finalizeComicLoad(archiveName) {
+        progressTextElement.innerHTML = '<span style="color: #4ade80;">Completed!</span>';
+        sePreConElement.style.display = 'none';
+        outputElement.style.display = 'block';
+
+        if (readerToolbarEl) {
+            readerToolbarEl.style.display = 'flex';
+        }
+        if (readerMetaEl) {
+            readerMetaEl.textContent = archiveName
+                ? `${archiveName} - Click the page to open the gallery`
+                : 'Click the page to open the gallery';
+        }
+
+        buildLightboxLinks();
+        initializeGallery();
+        const lastPage = getLastPageRead(currentComicFilename);
+        currentPageIndex = clamp(lastPage, 0, totalPages - 1);
+        currentScrollIndex = currentPageIndex;
+        applyReadingMode(true);
+        updatePageIndicator();
+
+        setTimeout(() => {
+            generateThumbnailFromFirstImage();
+        }, 100);
+    }
+
+    function showReaderError(message) {
+        const safeMessage = typeof message === 'string' ? message : String(message);
+        if (readerMetaEl) {
+            readerMetaEl.innerHTML = `<span style="color: #ef4444;">${safeMessage}</span>`;
+        }
+        if (readerToolbarEl) {
+            readerToolbarEl.style.display = 'none';
+        }
+        sePreConElement.style.display = 'none';
+        outputElement.style.display = 'block';
+    }
+
+    async function readContents(archive, archiveName) {
+        const entries = archive.entries;
+        const imageEntries = entries.filter(entry => getExt(entry.name) !== '');
+        totalPages = imageEntries.length;
+
+        if (totalPages === 0) {
+            showReaderError('No images were found in this archive.');
+            return;
+        }
+
+        const promises = [];
+        for (let i = 0; i < imageEntries.length; i++) {
+            promises.push(createBlobAsync(imageEntries[i], i, totalPages));
         }
 
         await Promise.all(promises);
+        finalizeComicLoad(archiveName);
     }
 
-    function createBlobAsync(entry, i, max) {
+    function createBlobAsync(entry, index, max) {
         return new Promise((resolve) => {
             entry.readData((data, err) => {
-                const blob = new Blob([data], { type: getMIME(entry.name) });
-                const url = URL.createObjectURL(blob);
-
-                const a = document.createElement('a');
-                a.href = url;
-                a.id = 'comicImg';
-
-                const img = document.createElement('img');
-                img.classList.add('imgUrl');
-                img.src = url;
-
-                a.appendChild(img);
-                outputElement.appendChild(a);
-
-                progressTextElement.innerHTML = `Reading ${i + 1}/${max} pages`;
-
-                if (i === max - 1) {
-                    progressTextElement.innerHTML = '<span style="color: #4ade80;">Completed!</span>';
-                    sePreConElement.style.display = 'none';
-                    outputElement.style.display = 'block';
-
-                    // generate thumbnail from first image
-                    setTimeout(() => {
-                        generateThumbnailFromFirstImage();
-                        highlightLastPage(currentComicFilename);
-                    }, 100);
+                if (err) {
+                    console.error('Failed to read entry:', err);
+                    resolve();
+                    return;
                 }
 
+                const blob = new Blob([data], { type: getMIME(entry.name) });
+                const url = URL.createObjectURL(blob);
+                pageUrls[index] = url;
+                pagesLoaded += 1;
+
+                progressTextElement.innerHTML = `Reading ${pagesLoaded}/${max} pages`;
                 resolve();
             });
         });
+    }
+
+    function buildLightboxLinks() {
+        if (!lightboxLinksEl) return;
+
+        lightboxLinksEl.innerHTML = '';
+        pageLinks = pageUrls.map((url, index) => {
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('aria-label', `Page ${index + 1}`);
+            link.dataset.index = index.toString();
+            lightboxLinksEl.appendChild(link);
+            return link;
+        });
+    }
+
+    function initializeGallery() {
+        if (!lightboxLinksEl || typeof lightGallery !== 'function') {
+            return;
+        }
+
+        if (lightGalleryInstance) {
+            lightGalleryInstance.destroy(true);
+            lightGalleryInstance = null;
+        }
+
+        lightGalleryInstance = lightGallery(lightboxLinksEl, {
+            selector: 'a',
+            zoom: true,
+            fullScreen: true,
+            download: false,
+            enableTouch: true,
+            thumbnail: true,
+            animateThumb: true,
+            showThumbByDefault: true,
+            autoplay: false,
+            autoplayControls: true,
+            rotate: true
+        });
+
+        if (lightboxLinksEl) {
+            lightboxLinksEl.removeEventListener('onAfterSlide', handleLightboxSlide);
+            lightboxLinksEl.addEventListener('onAfterSlide', handleLightboxSlide);
+        }
+    }
+
+    function handleLightboxSlide(event) {
+        const index = event.detail.index;
+        currentPageIndex = index;
+        currentScrollIndex = index;
+        updatePageIndicator();
+        saveLastPageRead(currentComicFilename, index);
+    }
+
+    function setReadingMode(mode) {
+        if (mode !== 'paged' && mode !== 'scroll') {
+            return;
+        }
+        if (readingMode === mode) {
+            return;
+        }
+
+        readingMode = mode;
+        localStorage.setItem(READER_MODE_KEY, readingMode);
+        applyReadingMode(true);
+    }
+
+    function applyReadingMode(shouldJump) {
+        updateModeButtons();
+
+        if (readingMode === 'scroll') {
+            outputElement.classList.add('scroll-mode');
+            if (pagedContainerEl) pagedContainerEl.style.display = 'none';
+            if (scrollContainerEl) scrollContainerEl.style.display = 'block';
+            if (smartGapToggleEl) smartGapToggleEl.disabled = false;
+
+            renderScrollMode(shouldJump);
+        } else {
+            outputElement.classList.remove('scroll-mode');
+            if (scrollContainerEl) scrollContainerEl.style.display = 'none';
+            if (pagedContainerEl) pagedContainerEl.style.display = 'block';
+            if (smartGapToggleEl) smartGapToggleEl.disabled = true;
+
+            clearScrollObservers();
+            renderPagedImage(currentPageIndex);
+        }
+
+        updateZoomControls();
+    }
+
+    function updateModeButtons() {
+        modeButtons.forEach((btn) => {
+            const isActive = btn.dataset.readingMode === readingMode;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive.toString());
+        });
+    }
+
+    function renderPagedImage(index) {
+        if (!pagedImageEl || totalPages === 0) {
+            return;
+        }
+
+        const safeIndex = clamp(index, 0, totalPages - 1);
+        currentPageIndex = safeIndex;
+        currentScrollIndex = safeIndex;
+        pagedImageEl.src = pageUrls[safeIndex];
+        pagedImageEl.alt = `Page ${safeIndex + 1}`;
+
+        if (pagedImageLinkEl) {
+            pagedImageLinkEl.href = pageUrls[safeIndex];
+        }
+
+        updatePageIndicator();
+    }
+
+    function renderScrollMode(shouldJump) {
+        if (!scrollModeReady) {
+            buildScrollPages();
+        }
+
+        applyScrollZoom();
+        initLazyObserver();
+        initScrollObserver();
+
+        if (shouldJump) {
+            scrollToPageIndex(currentScrollIndex, false);
+        }
+    }
+
+    function buildScrollPages() {
+        if (!scrollContainerEl) return;
+
+        scrollContainerEl.innerHTML = '';
+        scrollPageElements = [];
+        scrollEdgeData = [];
+
+        pageUrls.forEach((url, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'scroll-page';
+            wrapper.dataset.index = index.toString();
+
+            const img = document.createElement('img');
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.alt = `Page ${index + 1}`;
+            img.setAttribute('data-src', url);
+            img.addEventListener('load', () => analyzeImageWhitespace(img, index));
+
+            wrapper.appendChild(img);
+            scrollContainerEl.appendChild(wrapper);
+            scrollPageElements.push(wrapper);
+        });
+
+        scrollModeReady = true;
+        applySmartGapState();
+    }
+
+    function initLazyObserver() {
+        if (!scrollContainerEl) return;
+
+        if (lazyObserver) {
+            lazyObserver.disconnect();
+        }
+
+        const images = scrollContainerEl.querySelectorAll('img[data-src]');
+        if (!('IntersectionObserver' in window)) {
+            images.forEach((img) => setImageSource(img));
+            return;
+        }
+
+        lazyObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                const img = entry.target;
+                setImageSource(img);
+                lazyObserver.unobserve(img);
+            });
+        }, { rootMargin: '800px 0px' });
+
+        images.forEach((img) => lazyObserver.observe(img));
+    }
+
+    function initScrollObserver() {
+        if (!scrollContainerEl || !scrollPageElements.length) return;
+
+        if (visibilityObserver) {
+            visibilityObserver.disconnect();
+        }
+        visibilityRatios = new Map();
+
+        if (!('IntersectionObserver' in window)) {
+            return;
+        }
+
+        visibilityObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                const index = Number(entry.target.dataset.index);
+                visibilityRatios.set(index, entry.intersectionRatio);
+            });
+
+            let bestIndex = currentScrollIndex;
+            let bestRatio = 0;
+            visibilityRatios.forEach((ratio, index) => {
+                if (ratio > bestRatio) {
+                    bestRatio = ratio;
+                    bestIndex = index;
+                }
+            });
+
+            if (bestIndex !== currentScrollIndex) {
+                currentScrollIndex = bestIndex;
+                currentPageIndex = bestIndex;
+                updatePageIndicator();
+                scheduleSaveProgress(bestIndex);
+            }
+        }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+
+        scrollPageElements.forEach((page) => visibilityObserver.observe(page));
+    }
+
+    function clearScrollObservers() {
+        if (lazyObserver) {
+            lazyObserver.disconnect();
+            lazyObserver = null;
+        }
+        if (visibilityObserver) {
+            visibilityObserver.disconnect();
+            visibilityObserver = null;
+        }
+    }
+
+    function updatePageIndicator() {
+        if (!pageIndicatorEl) return;
+        if (totalPages === 0) {
+            pageIndicatorEl.textContent = '0 / 0';
+            return;
+        }
+
+        const index = readingMode === 'scroll' ? currentScrollIndex : currentPageIndex;
+        pageIndicatorEl.textContent = `${index + 1} / ${totalPages}`;
+    }
+
+    function scrollToPageIndex(index, useSmooth) {
+        if (!scrollPageElements.length) return;
+        const safeIndex = clamp(index, 0, totalPages - 1);
+        currentScrollIndex = safeIndex;
+        currentPageIndex = safeIndex;
+        updatePageIndicator();
+
+        const target = scrollPageElements[safeIndex];
+        if (target) {
+            target.scrollIntoView({
+                behavior: useSmooth ? 'smooth' : 'auto',
+                block: 'start'
+            });
+        }
+    }
+
+    function goToRelativePage(delta) {
+        if (totalPages === 0) return;
+
+        if (readingMode === 'scroll') {
+            scrollToPageIndex(currentScrollIndex + delta, true);
+        } else {
+            const nextIndex = clamp(currentPageIndex + delta, 0, totalPages - 1);
+            renderPagedImage(nextIndex);
+            saveLastPageRead(currentComicFilename, nextIndex);
+        }
+    }
+
+    function handleReaderKeydown(event) {
+        if (outputElement.style.display !== 'block') {
+            return;
+        }
+
+        const target = event.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+            return;
+        }
+        if (document.body.classList.contains('lg-on')) {
+            return;
+        }
+
+        if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            goToRelativePage(-1);
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            goToRelativePage(1);
+        }
+    }
+
+    function applyScrollZoom() {
+        if (!scrollContainerEl) return;
+
+        scrollZoom = clamp(scrollZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
+        const desiredWidth = BASE_SCROLL_WIDTH_VW * scrollZoom;
+        const clampedWidth = Math.min(desiredWidth, 100);
+        scrollContainerEl.style.setProperty('--scroll-image-width', `${clampedWidth}vw`);
+        localStorage.setItem(SCROLL_ZOOM_KEY, scrollZoom.toString());
+        updateZoomControls();
+    }
+
+    function updateZoomControls() {
+        if (zoomLevelEl) {
+            zoomLevelEl.textContent = `${Math.round(scrollZoom * 100)}%`;
+        }
+        const isScrollMode = readingMode === 'scroll';
+        if (zoomOutBtn) zoomOutBtn.disabled = !isScrollMode;
+        if (zoomInBtn) zoomInBtn.disabled = !isScrollMode;
+    }
+
+    function adjustScrollZoom(delta) {
+        scrollZoom = clamp(scrollZoom + delta, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX);
+        applyScrollZoom();
+    }
+
+    function scheduleSaveProgress(index) {
+        if (scrollSaveTimeout) {
+            clearTimeout(scrollSaveTimeout);
+        }
+        scrollSaveTimeout = setTimeout(() => {
+            saveLastPageRead(currentComicFilename, index);
+        }, 200);
+    }
+
+    function setImageSource(img) {
+        if (!img) return;
+        const dataSrc = img.getAttribute('data-src');
+        if (!dataSrc) return;
+        img.src = dataSrc;
+        img.removeAttribute('data-src');
+    }
+
+    function analyzeImageWhitespace(img, index) {
+        if (!img.naturalWidth || !img.naturalHeight) {
+            return;
+        }
+
+        const stripHeight = Math.min(20, img.naturalHeight);
+        const sampleHeight = Math.min(10, stripHeight);
+        const sampleWidth = Math.min(120, img.naturalWidth);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = sampleWidth;
+        canvas.height = sampleHeight;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        if (!ctx) return;
+
+        const topWhite = isStripMostlyWhite(ctx, img, 0, stripHeight, sampleWidth, sampleHeight);
+        const bottomStart = img.naturalHeight - stripHeight;
+        const bottomWhite = isStripMostlyWhite(ctx, img, bottomStart, stripHeight, sampleWidth, sampleHeight);
+
+        scrollEdgeData[index] = { topWhite, bottomWhite };
+        updateSmartGapForIndex(index);
+    }
+
+    function isStripMostlyWhite(ctx, img, startY, stripHeight, sampleWidth, sampleHeight) {
+        ctx.clearRect(0, 0, sampleWidth, sampleHeight);
+        ctx.drawImage(
+            img,
+            0,
+            startY,
+            img.naturalWidth,
+            stripHeight,
+            0,
+            0,
+            sampleWidth,
+            sampleHeight
+        );
+
+        const data = ctx.getImageData(0, 0, sampleWidth, sampleHeight).data;
+        const totalPixels = data.length / 4;
+        let whitePixels = 0;
+
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            if (r > 240 && g > 240 && b > 240) {
+                whitePixels += 1;
+            }
+        }
+
+        return whitePixels / totalPixels > 0.92;
+    }
+
+    function updateSmartGapForIndex(index) {
+        if (!smartGapEnabled) return;
+
+        const prevIndex = index - 1;
+        if (prevIndex >= 0 && scrollEdgeData[prevIndex] && scrollEdgeData[index]) {
+            const shouldTighten = scrollEdgeData[prevIndex].bottomWhite && scrollEdgeData[index].topWhite;
+            toggleTightGap(prevIndex, shouldTighten);
+        }
+
+        const nextIndex = index + 1;
+        if (nextIndex < totalPages && scrollEdgeData[index] && scrollEdgeData[nextIndex]) {
+            const shouldTighten = scrollEdgeData[index].bottomWhite && scrollEdgeData[nextIndex].topWhite;
+            toggleTightGap(index, shouldTighten);
+        }
+    }
+
+    function applySmartGapState() {
+        if (!scrollPageElements.length) return;
+
+        if (!smartGapEnabled) {
+            scrollPageElements.forEach((page) => page.classList.remove('scroll-page--tight'));
+            return;
+        }
+
+        scrollPageElements.forEach((page, index) => {
+            const current = scrollEdgeData[index];
+            const next = scrollEdgeData[index + 1];
+            const shouldTighten = current && next && current.bottomWhite && next.topWhite;
+            toggleTightGap(index, shouldTighten);
+        });
+    }
+
+    function toggleTightGap(index, shouldTighten) {
+        const page = scrollPageElements[index];
+        if (!page) return;
+        page.classList.toggle('scroll-page--tight', shouldTighten);
     }
 
     function getExt(filename) {
@@ -548,38 +1066,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearBlobs() {
-        document.querySelectorAll('.imgUrl').forEach(img => {
-            URL.revokeObjectURL(img.src);
-        });
+        if (pageUrls.length > 0) {
+            pageUrls.forEach(url => {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    console.warn('Failed to revoke blob URL:', e);
+                }
+            });
+        }
     }
 
     function generateThumbnailFromFirstImage() {
         try {
-            const firstImg = document.querySelector('#output a img.imgUrl');
-            if (!firstImg) {
+            const firstUrl = pageUrls[0];
+            if (!firstUrl) {
                 return;
             }
 
-            // Check if image is loaded
-            if (!firstImg.complete || firstImg.naturalWidth === 0) {
-                firstImg.onload = () => generateThumbnailFromFirstImage();
-                return;
-            }
+            const previewImg = new Image();
+            previewImg.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const maxWidth = 100;
+                const scale = maxWidth / previewImg.naturalWidth;
+                canvas.width = maxWidth;
+                canvas.height = previewImg.naturalHeight * scale;
 
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const maxWidth = 100;
-            const scale = maxWidth / firstImg.naturalWidth;
-            canvas.width = maxWidth;
-            canvas.height = firstImg.naturalHeight * scale;
+                ctx.drawImage(previewImg, 0, 0, canvas.width, canvas.height);
+                const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
 
-            ctx.drawImage(firstImg, 0, 0, canvas.width, canvas.height);
-            const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
-
-            // get existing data to preserve last_page
-            const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
-            const existing = readingHistory[currentComicFilename] || {};
-            saveLastPageRead(currentComicFilename, existing.last_page || 0, thumbnail);
+                // get existing data to preserve last_page
+                const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
+                const existing = readingHistory[currentComicFilename] || {};
+                saveLastPageRead(currentComicFilename, existing.last_page || 0, thumbnail);
+            };
+            previewImg.src = firstUrl;
         } catch (e) {
             console.error('Failed to create thumbnail:', e);
         }
@@ -612,27 +1134,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function highlightLastPage(filename) {
-        const lastPage = getLastPageRead(filename);
-
-        if (lastPage > 0) {
-            const images = document.querySelectorAll('#output a');
-
-            if (images[lastPage]) {
-                images[lastPage].classList.add('last-read');
-
-                // scroll to last read page
-                setTimeout(() => {
-                    images[lastPage].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 200);
-
-                // remove highlight on click
-                images[lastPage].addEventListener('click', function() {
-                    this.classList.remove('last-read');
-                }, { once: true });
-            }
-        }
-    }
 
     // IndexedDB functions for storing directory handle
     function openDB() {
@@ -799,5 +1300,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (hours > 0) return `${hours}h ago`;
         if (minutes > 0) return `${minutes}m ago`;
         return 'Just now';
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
     }
 });
