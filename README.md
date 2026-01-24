@@ -9,6 +9,7 @@ Modern web-based comic book reader for CBR, CBZ, and CBT files with library mana
 - **Reading Progress** - Automatically saves your last read page and scrolls to it when you reopen
 - **Thumbnail Previews** - Auto-generated cover thumbnails for quick comic recognition
 - **Recently Read** - Quick access to your last 5 comics with progress indicators
+- **Reading Modes** - Paged view or Webtoon/Scroll with continuous vertical reading, zoom, and optional smart gap removal
 - **Quick Read Mode** - Upload and read individual files without library setup
 - **Client-Side Only** - All processing happens in your browser, no server uploads required
 - **Offline Support** - Works completely offline after initial load
@@ -21,6 +22,7 @@ Modern web-based comic book reader for CBR, CBZ, and CBT files with library mana
 3. Browse your library with thumbnails and progress tracking
 4. Click any comic to read
 5. Your progress is automatically saved
+6. Use the reader toolbar to switch between Paged and Webtoon/Scroll modes
 
 ### Quick Read Mode
 1. Click "Quick Read"
@@ -96,6 +98,7 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 
 ### Development Notes
 - Reading progress is stored in `localStorage` (key: `comic_reader_userpref`)
+- Reader mode and scroll preferences are stored in `localStorage` (keys: `readerMode`, `scrollZoom`, `scrollSmartGap`)
 - Folder handles are stored in `IndexedDB` (database: `ComicReaderDB`)
 - Thumbnails are base64-encoded JPEG stored in localStorage
 - Uses vanilla JavaScript (no jQuery required)
