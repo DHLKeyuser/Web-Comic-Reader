@@ -457,6 +457,95 @@ p {
     color: var(--muted);
 }
 
+/* Mobile Library */
+.mobile-storage-info {
+    font-size: 13px;
+    color: var(--muted);
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    text-align: left;
+}
+
+.mobile-storage-count {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.mobile-storage-usage {
+    color: var(--muted);
+}
+
+.mobile-series-chapter {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px;
+}
+
+.series-chapter-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.mobile-delete-btn {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .2s;
+}
+
+.mobile-delete-btn:hover {
+    background: rgba(239, 68, 68, .1);
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+#mobileAllComicsList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+#mobileRecentComicsList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#mobileRecentComics {
+    margin: 20px 0;
+}
+
+#mobileRecentComics h3,
+#mobileAllComics h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--text);
+}
+
+#mobileAllComics {
+    margin: 20px 0;
+}
+
 #dropzone {
     border: 2px dashed var(--border) !important;
     border-radius: 14px;
