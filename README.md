@@ -87,11 +87,12 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 ├── index.html              # Main HTML file
 ├── assets/
 │   ├── css/
-│   │   └── styles.css     # All styles and theming
+│   │   └── styles.css       # All styles and theming
 │   └── js/
-│       ├── script.js      # Main application logic
+│       ├── script.js        # Main application logic
+│       ├── mobile-library.js # Mobile library storage (IndexedDB)
 │       └── uncompress/
-│           └── uncompress.js  # Archive extraction
+│           └── uncompress.js # Archive extraction
 ├── README.md
 └── LICENSE
 ```
@@ -100,6 +101,7 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 - Reading progress is stored in `localStorage` (key: `comic_reader_userpref`)
 - Reader mode and scroll preferences are stored in `localStorage` (keys: `readerMode`, `scrollZoom`, `scrollSmartGap`)
 - Folder handles are stored in `IndexedDB` (database: `ComicReaderDB`)
+- Mobile library comics are stored in `IndexedDB` (database: `MobileComicLibraryDB`)
 - Thumbnails are base64-encoded JPEG stored in localStorage
 - Uses vanilla JavaScript (no jQuery required)
 
@@ -111,18 +113,35 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 
 ## Browser Compatibility
 
-### Library Mode (File System Access API)
+### Desktop Library Mode (Folder-based)
+Uses the File System Access API to give the reader direct access to a folder of comics on your computer.
+
 **✅ Fully Supported:**
 - Chrome/Chromium (desktop)
 - Microsoft Edge (desktop)
 - Opera (desktop)
 
-**❌ Not Supported:**
-- Safari (macOS & iOS) - Apple has not implemented this API due to privacy/security concerns
-- Firefox - Partially supported behind flags, not production-ready
-- All iOS browsers (Chrome, Firefox, Edge on iOS) - Use Safari's engine, inherit same limitations
+### Mobile Library Mode (Import-based)
+For browsers that don't support the File System Access API, the reader offers a persistent imported-comic library stored in IndexedDB. Comics are imported via file picker and kept in browser storage across sessions.
 
-**📝 Note:** Safari and unsupported browsers will automatically fall back to Quick Read mode only. Users can still read comics by uploading individual files, but library features and progress tracking won't be available.
+**✅ Works on:**
+- Safari (macOS & iOS)
+- Firefox (desktop & mobile)
+- Chrome / Edge / Opera on iOS and Android
+- Any modern browser with IndexedDB support
+
+**Features:**
+- Import one or multiple `.cbr`, `.cbz`, `.cbt` files at once
+- Comics persist in browser storage — survives refresh and app reopening
+- Full library experience: series grouping, progress tracking, recently read, chapter navigation
+- Manage library: delete individual comics or clear the entire library
+- Duplicate detection by name + size + last modified date
+- Storage usage display
+
+### Quick Read Mode
+Available everywhere — upload a single comic file for immediate reading without library setup. Progress is not saved.
+
+**📝 Note:** Desktop browsers that support the File System Access API will see the folder-based library. All other browsers automatically get the import-based mobile library instead.
 
 ## Supported Formats
 
