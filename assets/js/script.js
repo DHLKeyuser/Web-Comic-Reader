@@ -21,6 +21,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickReadViewEl = document.getElementById('quickReadView');
     const footerCollapsedTextEl = document.getElementById('footerCollapsedText');
     const browserNoticeEl = document.getElementById('browserNotice');
+    const mobileImportBtn = document.getElementById('mobileImportBtn');
+    const mobileFileInput = document.getElementById('mobileFileInput');
+    const mobileLibraryViewEl = document.getElementById('mobileLibraryView');
+    const mobileLibraryInfoEl = document.getElementById('mobileLibraryInfo');
+    const mobileAddMoreBtn = document.getElementById('mobileAddMoreBtn');
+    const mobileQuickReadBtn = document.getElementById('mobileQuickReadBtn');
+    const mobileSettingsToggleBtn = document.getElementById('mobileSettingsToggleBtn');
+    const mobileSettingsPanelEl = document.getElementById('mobileSettingsPanel');
+    const mobileDefaultModeSelectEl = document.getElementById('mobileDefaultModeSelect');
+    const mobileAutoAdvanceToggleEl = document.getElementById('mobileAutoAdvanceToggle');
+    const mobileClearLibraryBtn = document.getElementById('mobileClearLibraryBtn');
+    const mobileResetProgressBtn = document.getElementById('mobileResetProgressBtn');
+    const mobileStorageInfoEl = document.getElementById('mobileStorageInfo');
+    const mobileRecentComicsEl = document.getElementById('mobileRecentComics');
+    const mobileRecentComicsListEl = document.getElementById('mobileRecentComicsList');
+    const mobileAllComicsEl = document.getElementById('mobileAllComics');
+    const mobileAllComicsListEl = document.getElementById('mobileAllComicsList');
     const changeFolderBtn = document.getElementById('changeFolderBtn');
     const currentFolderNameEl = document.getElementById('currentFolderName');
     const readerToolbarEl = document.getElementById('readerToolbar');
@@ -57,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let comicsDirectoryHandle = null;
     let isLibraryMode = false;
+    let isMobileLibraryMode = false;
 
     // current year
     currYearElement.innerHTML = (new Date()).getFullYear();
@@ -68,10 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
         selectFolderBtn.style.display = 'flex';
         dividerOrEl.style.display = 'block';
     } else {
-        // when API not supported, show notice and make quick read button primary
-        browserNoticeEl.style.display = 'block';
-        quickReadBtn.classList.remove('folder-btn-secondary');
-        quickReadBtn.classList.add('folder-btn-primary');
+        if (mobileImportBtn) mobileImportBtn.style.display = 'flex';
+        dividerOrEl.style.display = 'block';
+        initMobileLibrary();
     }
 
     // Load all the archive formats
@@ -80,8 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // click on collapsed footer to expand
     document.querySelector('.footer-collapsed').addEventListener('click', async () => {
         wrapElement.classList.remove('collapsed');
-        if (isLibraryMode && comicsDirectoryHandle) {
-            // check permission again when expanding
+        if (isMobileLibraryMode) {
+            await showMobileLibraryMode();
+        } else if (isLibraryMode && comicsDirectoryHandle) {
             const permission = await comicsDirectoryHandle.queryPermission({ mode: 'read' });
             if (permission === 'granted') {
                 showLibraryMode();
@@ -93,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             initialViewEl.style.display = 'block';
             libraryViewEl.style.display = 'none';
+            if (mobileLibraryViewEl) mobileLibraryViewEl.style.display = 'none';
             quickReadViewEl.style.display = 'none';
         }
     });
@@ -156,12 +175,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // back to library button
     if (backToLibraryBtn) {
         backToLibraryBtn.addEventListener('click', async () => {
-            if (comicsDirectoryHandle) {
+            if (isMobileLibraryMode) {
+                await showMobileLibraryMode();
+            } else if (comicsDirectoryHandle) {
                 const permission = await comicsDirectoryHandle.queryPermission({ mode: 'read' });
                 if (permission === 'granted') {
                     await showLibraryMode();
                 } else {
-                    // need to request permission with user gesture
                     try {
                         const newPermission = await comicsDirectoryHandle.requestPermission({ mode: 'read' });
                         if (newPermission === 'granted') {
@@ -238,8 +258,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!comicsDirectoryHandle) return;
 
         isLibraryMode = true;
+        isMobileLibraryMode = false;
         initialViewEl.style.display = 'none';
         libraryViewEl.style.display = 'block';
+        if (mobileLibraryViewEl) mobileLibraryViewEl.style.display = 'none';
         quickReadViewEl.style.display = 'none';
         footerCollapsedTextEl.textContent = 'Show library';
 
@@ -269,20 +291,23 @@ document.addEventListener('DOMContentLoaded', () => {
         isLibraryMode = false;
         initialViewEl.style.display = 'none';
         libraryViewEl.style.display = 'none';
+        if (mobileLibraryViewEl) mobileLibraryViewEl.style.display = 'none';
         quickReadViewEl.style.display = 'block';
         footerCollapsedTextEl.textContent = 'Upload another file';
 
         // reset button text in case it was changed
-        const titleEl = selectFolderBtn.querySelector('.btn-title');
-        const subtitleEl = selectFolderBtn.querySelector('.btn-subtitle');
-        if (titleEl && subtitleEl) {
-            titleEl.textContent = 'Select Comics Folder';
-            subtitleEl.textContent = 'Auto-track progress, browse all comics';
+        if (selectFolderBtn) {
+            const titleEl = selectFolderBtn.querySelector('.btn-title');
+            const subtitleEl = selectFolderBtn.querySelector('.btn-subtitle');
+            if (titleEl && subtitleEl) {
+                titleEl.textContent = 'Select Comics Folder';
+                subtitleEl.textContent = 'Auto-track progress, browse all comics';
+            }
         }
 
-        // show back to library button only if we have a directory handle
+        // show back to library button if we have a directory handle or mobile library
         if (backToLibraryBtn) {
-            backToLibraryBtn.style.display = comicsDirectoryHandle ? 'block' : 'none';
+            backToLibraryBtn.style.display = (comicsDirectoryHandle || isMobileLibraryMode) ? 'block' : 'none';
         }
     }
 
@@ -832,7 +857,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetFilename = libraryComicList[targetIndex];
         if (!targetFilename) return;
-        openComicFromFolder(targetFilename);
+        if (isMobileLibraryMode) {
+            openComicFromMobileLibrary(targetFilename);
+        } else {
+            openComicFromFolder(targetFilename);
+        }
         hideNextChapterFloat();
     }
 
@@ -1763,6 +1792,368 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+    // --- Mobile Library Mode ---
+
+    async function initMobileLibrary() {
+        if (typeof MobileLibrary === 'undefined') return;
+        try {
+            await MobileLibrary.init();
+            const count = await MobileLibrary.getComicCount();
+            if (count > 0) {
+                await showMobileLibraryMode();
+            }
+        } catch (err) {
+            console.error('Failed to init mobile library:', err);
+        }
+
+        if (mobileImportBtn) {
+            mobileImportBtn.addEventListener('click', () => {
+                if (mobileFileInput) mobileFileInput.click();
+            });
+        }
+
+        if (mobileFileInput) {
+            mobileFileInput.addEventListener('change', async () => {
+                const files = Array.from(mobileFileInput.files || []);
+                if (files.length === 0) return;
+                await handleMobileImport(files);
+                mobileFileInput.value = '';
+            });
+        }
+
+        if (mobileAddMoreBtn) {
+            mobileAddMoreBtn.addEventListener('click', () => {
+                if (mobileFileInput) mobileFileInput.click();
+            });
+        }
+
+        if (mobileQuickReadBtn) {
+            mobileQuickReadBtn.addEventListener('click', () => {
+                showQuickReadMode();
+            });
+        }
+
+        if (mobileSettingsToggleBtn && mobileSettingsPanelEl) {
+            mobileSettingsToggleBtn.addEventListener('click', () => {
+                const isHidden = mobileSettingsPanelEl.style.display === 'none' || mobileSettingsPanelEl.style.display === '';
+                mobileSettingsPanelEl.style.display = isHidden ? 'flex' : 'none';
+            });
+        }
+
+        if (mobileDefaultModeSelectEl) {
+            mobileDefaultModeSelectEl.value = readerSettings.defaultMode;
+            mobileDefaultModeSelectEl.addEventListener('change', () => {
+                readerSettings.defaultMode = mobileDefaultModeSelectEl.value === 'paged' ? 'paged' : 'scroll';
+                saveReaderSettings(readerSettings);
+                if (defaultModeSelectEl) defaultModeSelectEl.value = readerSettings.defaultMode;
+            });
+        }
+
+        if (mobileAutoAdvanceToggleEl) {
+            mobileAutoAdvanceToggleEl.checked = Boolean(readerSettings.autoAdvance);
+            mobileAutoAdvanceToggleEl.addEventListener('change', () => {
+                readerSettings.autoAdvance = mobileAutoAdvanceToggleEl.checked;
+                autoAdvanceEnabled = readerSettings.autoAdvance;
+                saveReaderSettings(readerSettings);
+                if (autoAdvanceToggleEl) autoAdvanceToggleEl.checked = readerSettings.autoAdvance;
+            });
+        }
+
+        if (mobileClearLibraryBtn) {
+            mobileClearLibraryBtn.addEventListener('click', async () => {
+                const count = await MobileLibrary.getComicCount();
+                const confirmed = window.confirm(`Delete all ${count} imported comics? This will remove the files from browser storage and cannot be undone.`);
+                if (confirmed) {
+                    await MobileLibrary.clearAll();
+                    localStorage.removeItem(CHAPTER_PROGRESS_KEY);
+                    localStorage.removeItem('comic_reader_userpref');
+                    isMobileLibraryMode = false;
+                    initialViewEl.style.display = 'block';
+                    if (mobileLibraryViewEl) mobileLibraryViewEl.style.display = 'none';
+                    quickReadViewEl.style.display = 'none';
+                }
+            });
+        }
+
+        if (mobileResetProgressBtn) {
+            mobileResetProgressBtn.addEventListener('click', async () => {
+                const confirmed = window.confirm('Reset all reading progress? This cannot be undone.');
+                if (confirmed) {
+                    localStorage.removeItem(CHAPTER_PROGRESS_KEY);
+                    localStorage.removeItem('comic_reader_userpref');
+                    await showMobileLibraryMode();
+                }
+            });
+        }
+    }
+
+    async function handleMobileImport(files) {
+        const validExtensions = ['.cbr', '.cbz', '.cbt'];
+        const validFiles = files.filter(f => {
+            const ext = '.' + f.name.split('.').pop().toLowerCase();
+            return validExtensions.includes(ext);
+        });
+
+        if (validFiles.length === 0) {
+            alert('No valid comic files selected. Please choose .cbr, .cbz, or .cbt files.');
+            return;
+        }
+
+        let imported = 0;
+        let skipped = 0;
+        let replaced = 0;
+        let errors = 0;
+
+        for (const file of validFiles) {
+            try {
+                const dupCheck = await MobileLibrary.isDuplicate(file);
+                if (dupCheck.isDuplicate) {
+                    if (dupCheck.isIdentical) {
+                        skipped++;
+                        continue;
+                    }
+                    const shouldReplace = window.confirm(
+                        `"${file.name}" already exists but differs from the imported version. Replace it?`
+                    );
+                    if (!shouldReplace) {
+                        skipped++;
+                        continue;
+                    }
+                    replaced++;
+                }
+                await MobileLibrary.importComic(file);
+                imported++;
+            } catch (err) {
+                console.error('Failed to import:', file.name, err);
+                if (err.name === 'QuotaExceededError' || (err.message && err.message.includes('quota'))) {
+                    alert(`Storage quota exceeded while importing "${file.name}". Try removing some comics to free space.`);
+                    break;
+                }
+                errors++;
+            }
+        }
+
+        let msg = '';
+        if (imported > 0) msg += `${imported} comic${imported > 1 ? 's' : ''} imported. `;
+        if (replaced > 0) msg += `${replaced} replaced. `;
+        if (skipped > 0) msg += `${skipped} skipped (duplicate). `;
+        if (errors > 0) msg += `${errors} failed. `;
+        if (msg) console.log('Import result:', msg.trim());
+
+        await showMobileLibraryMode();
+    }
+
+    async function showMobileLibraryMode() {
+        if (typeof MobileLibrary === 'undefined') return;
+
+        isMobileLibraryMode = true;
+        isLibraryMode = false;
+        initialViewEl.style.display = 'none';
+        libraryViewEl.style.display = 'none';
+        if (mobileLibraryViewEl) mobileLibraryViewEl.style.display = 'block';
+        quickReadViewEl.style.display = 'none';
+        footerCollapsedTextEl.textContent = 'Show library';
+
+        await updateMobileStorageInfo();
+        await loadMobileRecentComics();
+        await loadMobileAllComics();
+
+        if (mobileRecentComicsListEl && mobileRecentComicsListEl.children.length > 0) {
+            if (mobileRecentComicsEl) mobileRecentComicsEl.style.display = 'block';
+        } else {
+            if (mobileRecentComicsEl) mobileRecentComicsEl.style.display = 'none';
+        }
+        if (mobileAllComicsEl) mobileAllComicsEl.style.display = 'block';
+    }
+
+    async function updateMobileStorageInfo() {
+        if (!mobileStorageInfoEl) return;
+        try {
+            const count = await MobileLibrary.getComicCount();
+            const estimate = await MobileLibrary.getStorageEstimate();
+            let infoHtml = `<span class="mobile-storage-count">${count} comic${count !== 1 ? 's' : ''} imported</span>`;
+            if (estimate) {
+                infoHtml += ` <span class="mobile-storage-usage">• ${MobileLibrary.formatBytes(estimate.usage)} used</span>`;
+            }
+            if (mobileLibraryInfoEl) {
+                mobileLibraryInfoEl.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" style="vertical-align: -1px; margin-right: 4px; opacity: 0.7;"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/></svg>Mobile Library`;
+            }
+            mobileStorageInfoEl.innerHTML = infoHtml;
+        } catch (err) {
+            console.error('Failed to update storage info:', err);
+        }
+    }
+
+    async function loadMobileAllComics() {
+        if (!mobileAllComicsListEl) return;
+
+        try {
+            mobileAllComicsListEl.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="spinner" style="margin: 0 auto;"></div><div style="margin-top: 12px; color: var(--muted); font-size: 14px;">Loading library...</div></div>';
+
+            const comics = await MobileLibrary.listComics();
+
+            mobileAllComicsListEl.innerHTML = '';
+
+            if (comics.length === 0) {
+                mobileAllComicsListEl.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">No comics imported yet. Tap "Add comics" to get started.</div>';
+                return;
+            }
+
+            const filenames = comics.map(c => c.filename);
+            filenames.sort(naturalCompare);
+            const seriesList = buildSeriesGroups(filenames);
+            libraryComicList = seriesList.flatMap(series => series.chapters);
+            updateChapterContext(currentComicFilename, currentChapterFromLibrary);
+            renderMobileSeriesLibrary(seriesList, comics);
+        } catch (err) {
+            console.error('Failed to load mobile comics:', err);
+            mobileAllComicsListEl.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">Error loading library</div>';
+        }
+    }
+
+    function renderMobileSeriesLibrary(seriesList, comicsMeta) {
+        if (!mobileAllComicsListEl) return;
+
+        const progressStore = loadProgressStore();
+        const sizeMap = new Map();
+        comicsMeta.forEach(c => sizeMap.set(c.filename, c.size));
+
+        mobileAllComicsListEl.innerHTML = '';
+        mobileAllComicsListEl.classList.add('series-list');
+
+        seriesList.forEach((series) => {
+            const seriesWrapper = document.createElement('div');
+            seriesWrapper.className = 'series-item';
+            const latest = getLatestSeriesProgress(series.chapters, progressStore);
+            const latestLabel = latest
+                ? `${series.chapters.length} chapters • ${latest.filename} • ${formatTimestamp(latest.progress.lastRead)}`
+                : `${series.chapters.length} chapters`;
+
+            seriesWrapper.innerHTML = `
+                <button class="series-header" aria-expanded="false">
+                    <div>
+                        <div class="series-title">${series.title}</div>
+                        <div class="series-meta">${latestLabel}</div>
+                    </div>
+                    <span class="series-toggle">▾</span>
+                </button>
+                <div class="series-chapters"></div>
+            `;
+
+            const headerBtn = seriesWrapper.querySelector('.series-header');
+            const chaptersEl = seriesWrapper.querySelector('.series-chapters');
+            headerBtn.addEventListener('click', () => {
+                const expanded = seriesWrapper.classList.toggle('expanded');
+                headerBtn.setAttribute('aria-expanded', expanded.toString());
+            });
+
+            series.chapters.forEach((filename) => {
+                const chapterProgress = progressStore[filename];
+                const progressPercent = getProgressPercent(chapterProgress);
+                const fileSize = sizeMap.get(filename);
+                const sizeLabel = fileSize ? ` • ${MobileLibrary.formatBytes(fileSize)}` : '';
+                const chapterRow = document.createElement('div');
+                chapterRow.className = 'series-chapter mobile-series-chapter';
+                chapterRow.innerHTML = `
+                    <div class="series-chapter-main">
+                        <div class="series-chapter-title">${filename}</div>
+                        <div class="series-chapter-meta">${formatProgressLabel(chapterProgress)}${sizeLabel}</div>
+                        <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
+                    </div>
+                    <button class="mobile-delete-btn" title="Remove comic" aria-label="Remove ${filename}">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H5.5l1-1h3l1 1h2a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                    </button>
+                `;
+
+                const mainArea = chapterRow.querySelector('.series-chapter-main');
+                mainArea.addEventListener('click', () => openComicFromMobileLibrary(filename));
+
+                const deleteBtn = chapterRow.querySelector('.mobile-delete-btn');
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const confirmed = window.confirm(`Remove "${filename}" from library?`);
+                    if (confirmed) {
+                        await MobileLibrary.deleteComic(filename);
+                        await removeComicFromHistory(filename);
+                        await showMobileLibraryMode();
+                    }
+                });
+
+                chaptersEl.appendChild(chapterRow);
+            });
+
+            mobileAllComicsListEl.appendChild(seriesWrapper);
+        });
+    }
+
+    async function loadMobileRecentComics() {
+        if (!mobileRecentComicsListEl) return;
+
+        try {
+            const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
+            const progressStore = loadProgressStore();
+
+            const comics = await MobileLibrary.listComics();
+            const mobileFilenames = new Set(comics.map(c => c.filename));
+
+            const recentComics = Object.entries(progressStore)
+                .filter(([filename]) => mobileFilenames.has(filename))
+                .sort((a, b) => (b[1]?.lastRead || 0) - (a[1]?.lastRead || 0))
+                .slice(0, 5);
+
+            mobileRecentComicsListEl.innerHTML = '';
+
+            if (recentComics.length === 0) {
+                if (mobileRecentComicsEl) mobileRecentComicsEl.style.display = 'none';
+                return;
+            }
+            if (mobileRecentComicsEl) mobileRecentComicsEl.style.display = 'block';
+
+            for (const [filename, progress] of recentComics) {
+                const item = document.createElement('div');
+                item.className = 'recent-comic-item';
+
+                const thumb = readingHistory[filename]?.thumbnail;
+                const iconContent = thumb
+                    ? `<img src="${thumb}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">`
+                    : `<svg viewBox="0 0 16 16"><path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 12.5 2h-9zm6.854 6.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L8.793 9H5.5a.5.5 0 0 1 0-1h3.293L6.646 5.854a.5.5 0 1 1 .708-.708l3 3z"/></svg>`;
+
+                const progressPercent = getProgressPercent(progress);
+                item.innerHTML = `
+                    <div class="recent-comic-icon">${iconContent}</div>
+                    <div class="recent-comic-info">
+                        <div class="recent-comic-name">${filename}</div>
+                        <div class="recent-comic-meta">${formatProgressLabel(progress)} • ${formatTimestamp(progress.lastRead)}</div>
+                        <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
+                    </div>
+                `;
+                item.addEventListener('click', () => openComicFromMobileLibrary(filename));
+                mobileRecentComicsListEl.appendChild(item);
+            }
+        } catch (err) {
+            console.error('Failed to load mobile recent comics:', err);
+        }
+    }
+
+    async function openComicFromMobileLibrary(filename) {
+        try {
+            const file = await MobileLibrary.getComicFile(filename);
+            updateChapterContext(filename, true);
+            openComic(file, { fromLibrary: true });
+            setTimeout(async () => {
+                await loadMobileRecentComics();
+                if (mobileRecentComicsListEl && mobileRecentComicsListEl.children.length > 0 && mobileRecentComicsEl) {
+                    mobileRecentComicsEl.style.display = 'block';
+                }
+            }, 500);
+        } catch (err) {
+            console.error('Failed to open comic from mobile library:', err);
+            alert('Could not open this comic. It may have been removed from the library.');
+            await removeComicFromHistory(filename);
+            await showMobileLibraryMode();
+        }
+    }
+
     // IndexedDB functions for storing directory handle
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -1876,12 +2267,16 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('comic_reader_userpref', JSON.stringify(readingHistory));
             clearChapterProgress(filename);
             
-            // Refresh UI
-            await loadRecentComics();
-            
-            // Hide container if list is empty
-            if (recentComicsListEl.children.length === 0) {
-                recentComicsEl.style.display = 'none';
+            if (isMobileLibraryMode) {
+                await loadMobileRecentComics();
+                if (mobileRecentComicsListEl && mobileRecentComicsListEl.children.length === 0 && mobileRecentComicsEl) {
+                    mobileRecentComicsEl.style.display = 'none';
+                }
+            } else {
+                await loadRecentComics();
+                if (recentComicsListEl.children.length === 0) {
+                    recentComicsEl.style.display = 'none';
+                }
             }
         }
     }
@@ -1970,8 +2365,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetAllProgress() {
         localStorage.removeItem(CHAPTER_PROGRESS_KEY);
-        loadRecentComics();
-        loadAllComics();
+        if (isMobileLibraryMode) {
+            loadMobileRecentComics();
+            loadMobileAllComics();
+        } else {
+            loadRecentComics();
+            loadAllComics();
+        }
     }
 
     function clearChapterProgress(filename) {
