@@ -1789,7 +1789,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initHostedLibrary() {
         if (typeof HostedLibrary === 'undefined') return;
         const manifest = await HostedLibrary.loadManifest();
-        if (manifest && HostedLibrary.hasComics()) {
+        if (manifest) {
             await showHostedLibraryMode();
         }
 
@@ -1857,15 +1857,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!hostedAllComicsListEl) return;
 
         const seriesList = HostedLibrary.listSeries();
+        const hasAnyChapters = seriesList && seriesList.some(s => s.chapters && s.chapters.length > 0);
 
-        if (!seriesList || seriesList.length === 0) {
-            hostedAllComicsListEl.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">No comics in library yet. Add CBZ files to the Mangas/ folder and update library.json.</div>';
-            return;
-        }
-
-        const hasAnyChapters = seriesList.some(s => s.chapters && s.chapters.length > 0);
         if (!hasAnyChapters) {
-            hostedAllComicsListEl.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">No comics in library yet. Add CBZ files to the Mangas/ folder and update library.json.</div>';
+            const seriesNames = seriesList ? seriesList.map(s => s.title).filter(Boolean) : [];
+            const seriesNote = seriesNames.length > 0
+                ? `<div style="margin-top: 8px; color: var(--text); font-size: 13px;">Series folders found: <strong>${seriesNames.join(', ')}</strong></div><div style="margin-top: 4px; color: var(--muted); font-size: 13px;">Upload .cbz files into these folders and update library.json to see them here.</div>`
+                : '';
+            hostedAllComicsListEl.innerHTML = `<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">No chapters in the library yet.${seriesNote}</div>`;
             return;
         }
 
