@@ -90,18 +90,45 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 │   │   └── styles.css       # All styles and theming
 │   └── js/
 │       ├── script.js        # Main application logic
-│       ├── mobile-library.js # Mobile library storage (IndexedDB)
+│       ├── hosted-library.js # Hosted library (fetches from Mangas/)
 │       └── uncompress/
 │           └── uncompress.js # Archive extraction
+├── Mangas/                   # Comic files served by the app
+│   ├── library.json         # Manifest listing all series and chapters
+│   └── <Series Name>/      # One folder per series
+│       └── *.cbz            # Comic files
+├── generate-library.sh      # Script to regenerate library.json
 ├── README.md
 └── LICENSE
 ```
+
+### Adding Comics to the Hosted Library
+
+1. Create a folder under `Mangas/` for your series (e.g. `Mangas/Her Summon/`)
+2. Add your `.cbz`, `.cbr`, or `.cbt` files into the folder
+3. Update `Mangas/library.json` to list the series and chapter filenames:
+
+```json
+{
+  "series": [
+    {
+      "title": "Her Summon",
+      "folder": "Her Summon",
+      "chapters": ["Chapter 01.cbz", "Chapter 02.cbz"]
+    }
+  ]
+}
+```
+
+Or run `./generate-library.sh` to auto-generate the manifest from the folder contents.
+
+4. Commit and push — the library will appear automatically when the page loads.
 
 ### Development Notes
 - Reading progress is stored in `localStorage` (key: `comic_reader_userpref`)
 - Reader mode and scroll preferences are stored in `localStorage` (keys: `readerMode`, `scrollZoom`, `scrollSmartGap`)
 - Folder handles are stored in `IndexedDB` (database: `ComicReaderDB`)
-- Mobile library comics are stored in `IndexedDB` (database: `MobileComicLibraryDB`)
+- Hosted library manifest is at `Mangas/library.json`
 - Thumbnails are base64-encoded JPEG stored in localStorage
 - Uses vanilla JavaScript (no jQuery required)
 
@@ -113,35 +140,23 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 
 ## Browser Compatibility
 
-### Desktop Library Mode (Folder-based)
-Uses the File System Access API to give the reader direct access to a folder of comics on your computer.
+### Hosted Library Mode (works everywhere)
+Comics are served from the `Mangas/` folder alongside the app. The reader loads `Mangas/library.json` on startup, lists all available series and chapters, and fetches CBZ/CBR/CBT files on demand. Works on every browser, every device — desktop, phone, tablet.
 
-**✅ Fully Supported:**
-- Chrome/Chromium (desktop)
-- Microsoft Edge (desktop)
-- Opera (desktop)
-
-### Mobile Library Mode (Import-based)
-For browsers that don't support the File System Access API, the reader offers a persistent imported-comic library stored in IndexedDB. Comics are imported via file picker and kept in browser storage across sessions.
-
-**✅ Works on:**
-- Safari (macOS & iOS)
-- Firefox (desktop & mobile)
-- Chrome / Edge / Opera on iOS and Android
-- Any modern browser with IndexedDB support
+**✅ Works on all browsers:** Chrome, Safari, Firefox, Edge, Opera, iOS, Android
 
 **Features:**
-- Import one or multiple `.cbr`, `.cbz`, `.cbt` files at once
-- Comics persist in browser storage — survives refresh and app reopening
-- Full library experience: series grouping, progress tracking, recently read, chapter navigation
-- Manage library: delete individual comics or clear the entire library
-- Duplicate detection by name + size + last modified date
-- Storage usage display
+- Series grouped by folder structure
+- Reading progress tracking (localStorage)
+- Recently read comics
+- Chapter navigation (previous/next)
+- Webtoon/scroll mode and paged mode
+
+### Desktop Library Mode (Folder-based, optional)
+On desktop Chromium browsers (Chrome, Edge, Opera), you can also select a local comics folder using the File System Access API for a traditional file-based library.
 
 ### Quick Read Mode
 Available everywhere — upload a single comic file for immediate reading without library setup. Progress is not saved.
-
-**📝 Note:** Desktop browsers that support the File System Access API will see the folder-based library. All other browsers automatically get the import-based mobile library instead.
 
 ## Supported Formats
 
