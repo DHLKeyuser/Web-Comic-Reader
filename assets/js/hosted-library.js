@@ -57,7 +57,8 @@ const HostedLibrary = (() => {
         const path = getComicPath(filename);
         if (!path) throw new Error('Comic not found in manifest: ' + filename);
 
-        const resp = await fetch(path);
+        const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+        const resp = await fetch(encodedPath);
         if (!resp.ok) {
             throw new Error(`Failed to download "${filename}" (HTTP ${resp.status})`);
         }
