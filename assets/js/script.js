@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const footerCollapsedTextEl = document.getElementById('footerCollapsedText');
     const browserNoticeEl = document.getElementById('browserNotice');
     const hostedLibraryViewEl = document.getElementById('hostedLibraryView');
+    const hostedSelectFolderBtn = document.getElementById('hostedSelectFolderBtn');
+    const hostedFolderDivider = document.getElementById('hostedFolderDivider');
     const hostedQuickReadBtn = document.getElementById('hostedQuickReadBtn');
     const hostedSettingsToggleBtn = document.getElementById('hostedSettingsToggleBtn');
     const hostedSettingsPanelEl = document.getElementById('hostedSettingsPanel');
@@ -76,13 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // check if File System Access API is supported
     const supportsFileSystemAccess = 'showDirectoryPicker' in window;
 
-    initHostedLibrary();
-
     if (supportsFileSystemAccess) {
         selectFolderBtn.style.display = 'flex';
         dividerOrEl.style.display = 'block';
-    } else if (!browserNoticeEl) {
-        // no-op, hosted library handles everything
     }
 
     // Load all the archive formats
@@ -219,18 +217,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // load directory handle on startup
+    // load directory handle on startup, then fall back to hosted library
     if (supportsFileSystemAccess) {
         loadDirectoryHandle().then(async (result) => {
             if (result.handle && result.hasPermission) {
                 comicsDirectoryHandle = result.handle;
                 await showLibraryMode();
             } else if (result.handle && !result.hasPermission) {
-                // we have a handle but need permission - show button to re-grant
                 comicsDirectoryHandle = result.handle;
                 showReconnectButton();
+            } else {
+                await initHostedLibrary();
             }
         });
+    } else {
+        initHostedLibrary();
     }
 
     function showReconnectButton() {
@@ -1791,6 +1792,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const manifest = await HostedLibrary.loadManifest();
         if (manifest) {
             await showHostedLibraryMode();
+        }
+
+        if (supportsFileSystemAccess && hostedSelectFolderBtn) {
+            hostedSelectFolderBtn.style.display = '';
+            if (hostedFolderDivider) hostedFolderDivider.style.display = '';
+            hostedSelectFolderBtn.addEventListener('click', () => {
+                if (selectFolderBtn) selectFolderBtn.click();
+            });
         }
 
         if (hostedQuickReadBtn) {
