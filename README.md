@@ -87,19 +87,48 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 ├── index.html              # Main HTML file
 ├── assets/
 │   ├── css/
-│   │   └── styles.css     # All styles and theming
+│   │   └── styles.css       # All styles and theming
 │   └── js/
-│       ├── script.js      # Main application logic
+│       ├── script.js        # Main application logic
+│       ├── hosted-library.js # Hosted library (fetches from Mangas/)
 │       └── uncompress/
-│           └── uncompress.js  # Archive extraction
+│           └── uncompress.js # Archive extraction
+├── Mangas/                   # Comic files served by the app
+│   ├── library.json         # Manifest listing all series and chapters
+│   └── <Series Name>/      # One folder per series
+│       └── *.cbz            # Comic files
+├── generate-library.sh      # Script to regenerate library.json
 ├── README.md
 └── LICENSE
 ```
+
+### Adding Comics to the Hosted Library
+
+1. Create a folder under `Mangas/` for your series (e.g. `Mangas/Her Summon/`)
+2. Add your `.cbz`, `.cbr`, or `.cbt` files into the folder
+3. Update `Mangas/library.json` to list the series and chapter filenames:
+
+```json
+{
+  "series": [
+    {
+      "title": "Her Summon",
+      "folder": "Her Summon",
+      "chapters": ["Chapter 01.cbz", "Chapter 02.cbz"]
+    }
+  ]
+}
+```
+
+Or run `./generate-library.sh` to auto-generate the manifest from the folder contents.
+
+4. Commit and push — the library will appear automatically when the page loads.
 
 ### Development Notes
 - Reading progress is stored in `localStorage` (key: `comic_reader_userpref`)
 - Reader mode and scroll preferences are stored in `localStorage` (keys: `readerMode`, `scrollZoom`, `scrollSmartGap`)
 - Folder handles are stored in `IndexedDB` (database: `ComicReaderDB`)
+- Hosted library manifest is at `Mangas/library.json`
 - Thumbnails are base64-encoded JPEG stored in localStorage
 - Uses vanilla JavaScript (no jQuery required)
 
@@ -111,18 +140,23 @@ npx http-server -p 8000 -S -C localhost+1.pem -K localhost+1-key.pem
 
 ## Browser Compatibility
 
-### Library Mode (File System Access API)
-**✅ Fully Supported:**
-- Chrome/Chromium (desktop)
-- Microsoft Edge (desktop)
-- Opera (desktop)
+### Hosted Library Mode (works everywhere)
+Comics are served from the `Mangas/` folder alongside the app. The reader loads `Mangas/library.json` on startup, lists all available series and chapters, and fetches CBZ/CBR/CBT files on demand. Works on every browser, every device — desktop, phone, tablet.
 
-**❌ Not Supported:**
-- Safari (macOS & iOS) - Apple has not implemented this API due to privacy/security concerns
-- Firefox - Partially supported behind flags, not production-ready
-- All iOS browsers (Chrome, Firefox, Edge on iOS) - Use Safari's engine, inherit same limitations
+**✅ Works on all browsers:** Chrome, Safari, Firefox, Edge, Opera, iOS, Android
 
-**📝 Note:** Safari and unsupported browsers will automatically fall back to Quick Read mode only. Users can still read comics by uploading individual files, but library features and progress tracking won't be available.
+**Features:**
+- Series grouped by folder structure
+- Reading progress tracking (localStorage)
+- Recently read comics
+- Chapter navigation (previous/next)
+- Webtoon/scroll mode and paged mode
+
+### Desktop Library Mode (Folder-based, optional)
+On desktop Chromium browsers (Chrome, Edge, Opera), you can also select a local comics folder using the File System Access API for a traditional file-based library.
+
+### Quick Read Mode
+Available everywhere — upload a single comic file for immediate reading without library setup. Progress is not saved.
 
 ## Supported Formats
 

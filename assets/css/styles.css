@@ -261,9 +261,6 @@ p {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 300px;
-    overflow-y: auto;
-    overflow-x: hidden;
 }
 
 .settings-panel {
@@ -455,6 +452,35 @@ p {
 .recent-comic-meta {
     font-size: 12px;
     color: var(--muted);
+}
+
+/* Hosted Library */
+#hostedAllComicsList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#hostedRecentComicsList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#hostedRecentComics {
+    margin: 20px 0;
+}
+
+#hostedRecentComics h3,
+#hostedAllComics h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--text);
+}
+
+#hostedAllComics {
+    margin: 20px 0;
 }
 
 #dropzone {

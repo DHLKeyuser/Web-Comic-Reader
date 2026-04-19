@@ -21,6 +21,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickReadViewEl = document.getElementById('quickReadView');
     const footerCollapsedTextEl = document.getElementById('footerCollapsedText');
     const browserNoticeEl = document.getElementById('browserNotice');
+    const hostedLibraryViewEl = document.getElementById('hostedLibraryView');
+    const hostedSelectFolderBtn = document.getElementById('hostedSelectFolderBtn');
+    const hostedFolderDivider = document.getElementById('hostedFolderDivider');
+    const hostedQuickReadBtn = document.getElementById('hostedQuickReadBtn');
+    const hostedSettingsToggleBtn = document.getElementById('hostedSettingsToggleBtn');
+    const hostedSettingsPanelEl = document.getElementById('hostedSettingsPanel');
+    const hostedDefaultModeSelectEl = document.getElementById('hostedDefaultModeSelect');
+    const hostedAutoAdvanceToggleEl = document.getElementById('hostedAutoAdvanceToggle');
+    const hostedResetProgressBtn = document.getElementById('hostedResetProgressBtn');
+    const hostedRecentComicsEl = document.getElementById('hostedRecentComics');
+    const hostedRecentComicsListEl = document.getElementById('hostedRecentComicsList');
+    const hostedAllComicsEl = document.getElementById('hostedAllComics');
+    const hostedAllComicsListEl = document.getElementById('hostedAllComicsList');
     const changeFolderBtn = document.getElementById('changeFolderBtn');
     const currentFolderNameEl = document.getElementById('currentFolderName');
     const readerToolbarEl = document.getElementById('readerToolbar');
@@ -57,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let comicsDirectoryHandle = null;
     let isLibraryMode = false;
+    let isHostedLibraryMode = false;
 
     // current year
     currYearElement.innerHTML = (new Date()).getFullYear();
@@ -67,11 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (supportsFileSystemAccess) {
         selectFolderBtn.style.display = 'flex';
         dividerOrEl.style.display = 'block';
-    } else {
-        // when API not supported, show notice and make quick read button primary
-        browserNoticeEl.style.display = 'block';
-        quickReadBtn.classList.remove('folder-btn-secondary');
-        quickReadBtn.classList.add('folder-btn-primary');
     }
 
     // Load all the archive formats
@@ -80,8 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // click on collapsed footer to expand
     document.querySelector('.footer-collapsed').addEventListener('click', async () => {
         wrapElement.classList.remove('collapsed');
-        if (isLibraryMode && comicsDirectoryHandle) {
-            // check permission again when expanding
+        if (isHostedLibraryMode) {
+            await showHostedLibraryMode();
+        } else if (isLibraryMode && comicsDirectoryHandle) {
             const permission = await comicsDirectoryHandle.queryPermission({ mode: 'read' });
             if (permission === 'granted') {
                 showLibraryMode();
@@ -93,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             initialViewEl.style.display = 'block';
             libraryViewEl.style.display = 'none';
+            if (hostedLibraryViewEl) hostedLibraryViewEl.style.display = 'none';
             quickReadViewEl.style.display = 'none';
         }
     });
@@ -156,12 +167,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // back to library button
     if (backToLibraryBtn) {
         backToLibraryBtn.addEventListener('click', async () => {
-            if (comicsDirectoryHandle) {
+            if (isHostedLibraryMode) {
+                await showHostedLibraryMode();
+            } else if (comicsDirectoryHandle) {
                 const permission = await comicsDirectoryHandle.queryPermission({ mode: 'read' });
                 if (permission === 'granted') {
                     await showLibraryMode();
                 } else {
-                    // need to request permission with user gesture
                     try {
                         const newPermission = await comicsDirectoryHandle.requestPermission({ mode: 'read' });
                         if (newPermission === 'granted') {
@@ -205,18 +217,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // load directory handle on startup
+    // load directory handle on startup, then fall back to hosted library
     if (supportsFileSystemAccess) {
         loadDirectoryHandle().then(async (result) => {
             if (result.handle && result.hasPermission) {
                 comicsDirectoryHandle = result.handle;
                 await showLibraryMode();
             } else if (result.handle && !result.hasPermission) {
-                // we have a handle but need permission - show button to re-grant
                 comicsDirectoryHandle = result.handle;
                 showReconnectButton();
+            } else {
+                await initHostedLibrary();
             }
         });
+    } else {
+        initHostedLibrary();
     }
 
     function showReconnectButton() {
@@ -238,8 +253,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!comicsDirectoryHandle) return;
 
         isLibraryMode = true;
+        isHostedLibraryMode = false;
         initialViewEl.style.display = 'none';
         libraryViewEl.style.display = 'block';
+        if (hostedLibraryViewEl) hostedLibraryViewEl.style.display = 'none';
         quickReadViewEl.style.display = 'none';
         footerCollapsedTextEl.textContent = 'Show library';
 
@@ -269,20 +286,21 @@ document.addEventListener('DOMContentLoaded', () => {
         isLibraryMode = false;
         initialViewEl.style.display = 'none';
         libraryViewEl.style.display = 'none';
+        if (hostedLibraryViewEl) hostedLibraryViewEl.style.display = 'none';
         quickReadViewEl.style.display = 'block';
         footerCollapsedTextEl.textContent = 'Upload another file';
 
-        // reset button text in case it was changed
-        const titleEl = selectFolderBtn.querySelector('.btn-title');
-        const subtitleEl = selectFolderBtn.querySelector('.btn-subtitle');
-        if (titleEl && subtitleEl) {
-            titleEl.textContent = 'Select Comics Folder';
-            subtitleEl.textContent = 'Auto-track progress, browse all comics';
+        if (selectFolderBtn) {
+            const titleEl = selectFolderBtn.querySelector('.btn-title');
+            const subtitleEl = selectFolderBtn.querySelector('.btn-subtitle');
+            if (titleEl && subtitleEl) {
+                titleEl.textContent = 'Select Comics Folder';
+                subtitleEl.textContent = 'Auto-track progress, browse all comics';
+            }
         }
 
-        // show back to library button only if we have a directory handle
         if (backToLibraryBtn) {
-            backToLibraryBtn.style.display = comicsDirectoryHandle ? 'block' : 'none';
+            backToLibraryBtn.style.display = (comicsDirectoryHandle || isHostedLibraryMode) ? 'block' : 'none';
         }
     }
 
@@ -832,7 +850,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetFilename = libraryComicList[targetIndex];
         if (!targetFilename) return;
-        openComicFromFolder(targetFilename);
+        if (isHostedLibraryMode) {
+            openComicFromHostedLibrary(targetFilename);
+        } else {
+            openComicFromFolder(targetFilename);
+        }
         hideNextChapterFloat();
     }
 
@@ -1763,6 +1785,233 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+    // --- Hosted Library Mode ---
+
+    async function initHostedLibrary() {
+        if (typeof HostedLibrary === 'undefined') return;
+        const manifest = await HostedLibrary.loadManifest();
+        if (manifest) {
+            await showHostedLibraryMode();
+        }
+
+        if (supportsFileSystemAccess && hostedSelectFolderBtn) {
+            hostedSelectFolderBtn.style.display = '';
+            if (hostedFolderDivider) hostedFolderDivider.style.display = '';
+            hostedSelectFolderBtn.addEventListener('click', () => {
+                if (selectFolderBtn) selectFolderBtn.click();
+            });
+        }
+
+        if (hostedQuickReadBtn) {
+            hostedQuickReadBtn.addEventListener('click', () => showQuickReadMode());
+        }
+
+        if (hostedSettingsToggleBtn && hostedSettingsPanelEl) {
+            hostedSettingsToggleBtn.addEventListener('click', () => {
+                const isHidden = hostedSettingsPanelEl.style.display === 'none' || hostedSettingsPanelEl.style.display === '';
+                hostedSettingsPanelEl.style.display = isHidden ? 'flex' : 'none';
+            });
+        }
+
+        if (hostedDefaultModeSelectEl) {
+            hostedDefaultModeSelectEl.value = readerSettings.defaultMode;
+            hostedDefaultModeSelectEl.addEventListener('change', () => {
+                readerSettings.defaultMode = hostedDefaultModeSelectEl.value === 'paged' ? 'paged' : 'scroll';
+                saveReaderSettings(readerSettings);
+                if (defaultModeSelectEl) defaultModeSelectEl.value = readerSettings.defaultMode;
+            });
+        }
+
+        if (hostedAutoAdvanceToggleEl) {
+            hostedAutoAdvanceToggleEl.checked = Boolean(readerSettings.autoAdvance);
+            hostedAutoAdvanceToggleEl.addEventListener('change', () => {
+                readerSettings.autoAdvance = hostedAutoAdvanceToggleEl.checked;
+                autoAdvanceEnabled = readerSettings.autoAdvance;
+                saveReaderSettings(readerSettings);
+                if (autoAdvanceToggleEl) autoAdvanceToggleEl.checked = readerSettings.autoAdvance;
+            });
+        }
+
+        if (hostedResetProgressBtn) {
+            hostedResetProgressBtn.addEventListener('click', () => {
+                const confirmed = window.confirm('Reset all reading progress? This cannot be undone.');
+                if (confirmed) {
+                    resetAllProgress();
+                }
+            });
+        }
+    }
+
+    async function showHostedLibraryMode() {
+        if (typeof HostedLibrary === 'undefined') return;
+
+        isHostedLibraryMode = true;
+        isLibraryMode = false;
+        initialViewEl.style.display = 'none';
+        libraryViewEl.style.display = 'none';
+        if (hostedLibraryViewEl) hostedLibraryViewEl.style.display = 'block';
+        quickReadViewEl.style.display = 'none';
+        footerCollapsedTextEl.textContent = 'Show library';
+
+        loadHostedRecentComics();
+        loadHostedAllComics();
+
+        if (hostedRecentComicsListEl && hostedRecentComicsListEl.children.length > 0) {
+            if (hostedRecentComicsEl) hostedRecentComicsEl.style.display = 'block';
+        }
+        if (hostedAllComicsEl) hostedAllComicsEl.style.display = 'block';
+    }
+
+    function loadHostedAllComics() {
+        if (!hostedAllComicsListEl) return;
+
+        const seriesList = HostedLibrary.listSeries();
+        const hasAnyChapters = seriesList && seriesList.some(s => s.chapters && s.chapters.length > 0);
+
+        if (!hasAnyChapters) {
+            const seriesNames = seriesList ? seriesList.map(s => s.title).filter(Boolean) : [];
+            const seriesNote = seriesNames.length > 0
+                ? `<div style="margin-top: 8px; color: var(--text); font-size: 13px;">Series folders found: <strong>${seriesNames.join(', ')}</strong></div><div style="margin-top: 4px; color: var(--muted); font-size: 13px;">Upload .cbz files into these folders and update library.json to see them here.</div>`
+                : '';
+            hostedAllComicsListEl.innerHTML = `<div style="text-align: center; color: var(--muted); padding: 20px; font-size: 14px;">No chapters in the library yet.${seriesNote}</div>`;
+            return;
+        }
+
+        const allChapters = [];
+        const seriesForRender = [];
+        for (const s of seriesList) {
+            if (!s.chapters || s.chapters.length === 0) continue;
+            const sorted = [...s.chapters].sort(naturalCompare);
+            seriesForRender.push({ key: s.title.toLowerCase(), title: s.title, chapters: sorted });
+            allChapters.push(...sorted);
+        }
+        seriesForRender.sort((a, b) => naturalCompare(a.title, b.title));
+
+        libraryComicList = seriesForRender.flatMap(s => s.chapters);
+        updateChapterContext(currentComicFilename, currentChapterFromLibrary);
+        renderHostedSeriesLibrary(seriesForRender);
+    }
+
+    function renderHostedSeriesLibrary(seriesList) {
+        if (!hostedAllComicsListEl) return;
+
+        const progressStore = loadProgressStore();
+        hostedAllComicsListEl.innerHTML = '';
+        hostedAllComicsListEl.classList.add('series-list');
+
+        seriesList.forEach((series) => {
+            const seriesWrapper = document.createElement('div');
+            seriesWrapper.className = 'series-item';
+            const latest = getLatestSeriesProgress(series.chapters, progressStore);
+            const latestLabel = latest
+                ? `${series.chapters.length} chapters • ${latest.filename} • ${formatTimestamp(latest.progress.lastRead)}`
+                : `${series.chapters.length} chapters`;
+
+            seriesWrapper.innerHTML = `
+                <button class="series-header" aria-expanded="false">
+                    <div>
+                        <div class="series-title">${series.title}</div>
+                        <div class="series-meta">${latestLabel}</div>
+                    </div>
+                    <span class="series-toggle">▾</span>
+                </button>
+                <div class="series-chapters"></div>
+            `;
+
+            const headerBtn = seriesWrapper.querySelector('.series-header');
+            const chaptersEl = seriesWrapper.querySelector('.series-chapters');
+            headerBtn.addEventListener('click', () => {
+                const expanded = seriesWrapper.classList.toggle('expanded');
+                headerBtn.setAttribute('aria-expanded', expanded.toString());
+            });
+
+            series.chapters.forEach((filename) => {
+                const chapterProgress = progressStore[filename];
+                const progressPercent = getProgressPercent(chapterProgress);
+                const chapterRow = document.createElement('div');
+                chapterRow.className = 'series-chapter';
+                chapterRow.innerHTML = `
+                    <div class="series-chapter-title">${filename}</div>
+                    <div class="series-chapter-meta">${formatProgressLabel(chapterProgress)}</div>
+                    <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
+                `;
+                chapterRow.addEventListener('click', () => openComicFromHostedLibrary(filename));
+                chaptersEl.appendChild(chapterRow);
+            });
+
+            hostedAllComicsListEl.appendChild(seriesWrapper);
+        });
+    }
+
+    function loadHostedRecentComics() {
+        if (!hostedRecentComicsListEl) return;
+
+        try {
+            const readingHistory = JSON.parse(localStorage.getItem('comic_reader_userpref') || '{}');
+            const progressStore = loadProgressStore();
+
+            const allChapters = new Set(HostedLibrary.listAllChapters());
+
+            const recentComics = Object.entries(progressStore)
+                .filter(([filename]) => allChapters.has(filename))
+                .sort((a, b) => (b[1]?.lastRead || 0) - (a[1]?.lastRead || 0))
+                .slice(0, 5);
+
+            hostedRecentComicsListEl.innerHTML = '';
+
+            if (recentComics.length === 0) {
+                if (hostedRecentComicsEl) hostedRecentComicsEl.style.display = 'none';
+                return;
+            }
+            if (hostedRecentComicsEl) hostedRecentComicsEl.style.display = 'block';
+
+            for (const [filename, progress] of recentComics) {
+                const item = document.createElement('div');
+                item.className = 'recent-comic-item';
+
+                const thumb = readingHistory[filename]?.thumbnail;
+                const iconContent = thumb
+                    ? `<img src="${thumb}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">`
+                    : `<svg viewBox="0 0 16 16"><path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 12.5 2h-9zm6.854 6.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L8.793 9H5.5a.5.5 0 0 1 0-1h3.293L6.646 5.854a.5.5 0 1 1 .708-.708l3 3z"/></svg>`;
+
+                const progressPercent = getProgressPercent(progress);
+                item.innerHTML = `
+                    <div class="recent-comic-icon">${iconContent}</div>
+                    <div class="recent-comic-info">
+                        <div class="recent-comic-name">${filename}</div>
+                        <div class="recent-comic-meta">${formatProgressLabel(progress)} • ${formatTimestamp(progress.lastRead)}</div>
+                        <div class="progress-bar"><div class="progress-bar-fill" style="width: ${progressPercent}%"></div></div>
+                    </div>
+                `;
+                item.addEventListener('click', () => openComicFromHostedLibrary(filename));
+                hostedRecentComicsListEl.appendChild(item);
+            }
+        } catch (err) {
+            console.error('Failed to load hosted recent comics:', err);
+        }
+    }
+
+    async function openComicFromHostedLibrary(filename) {
+        try {
+            progressTextElement.innerHTML = `Downloading ${filename}...`;
+            sePreConElement.style.display = 'block';
+            const file = await HostedLibrary.fetchComicFile(filename);
+            sePreConElement.style.display = 'none';
+            updateChapterContext(filename, true);
+            openComic(file, { fromLibrary: true });
+            setTimeout(() => {
+                loadHostedRecentComics();
+                if (hostedRecentComicsListEl && hostedRecentComicsListEl.children.length > 0 && hostedRecentComicsEl) {
+                    hostedRecentComicsEl.style.display = 'block';
+                }
+            }, 500);
+        } catch (err) {
+            console.error('Failed to open comic from hosted library:', err);
+            sePreConElement.style.display = 'none';
+            alert('Could not download this comic: ' + err.message);
+        }
+    }
+
     // IndexedDB functions for storing directory handle
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -1876,12 +2125,16 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('comic_reader_userpref', JSON.stringify(readingHistory));
             clearChapterProgress(filename);
             
-            // Refresh UI
-            await loadRecentComics();
-            
-            // Hide container if list is empty
-            if (recentComicsListEl.children.length === 0) {
-                recentComicsEl.style.display = 'none';
+            if (isHostedLibraryMode) {
+                loadHostedRecentComics();
+                if (hostedRecentComicsListEl && hostedRecentComicsListEl.children.length === 0 && hostedRecentComicsEl) {
+                    hostedRecentComicsEl.style.display = 'none';
+                }
+            } else {
+                await loadRecentComics();
+                if (recentComicsListEl.children.length === 0) {
+                    recentComicsEl.style.display = 'none';
+                }
             }
         }
     }
@@ -1970,8 +2223,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetAllProgress() {
         localStorage.removeItem(CHAPTER_PROGRESS_KEY);
-        loadRecentComics();
-        loadAllComics();
+        if (isHostedLibraryMode) {
+            loadHostedRecentComics();
+            loadHostedAllComics();
+        } else {
+            loadRecentComics();
+            loadAllComics();
+        }
     }
 
     function clearChapterProgress(filename) {

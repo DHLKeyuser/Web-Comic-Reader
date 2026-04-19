@@ -92,6 +92,46 @@
             </div>
         </div>
 
+        <div id="hostedLibraryView" style="display:none;">
+            <div class="library-header">
+                <div class="library-header-left">
+                    <h1>Your Comic Library</h1>
+                </div>
+                <div class="library-header-actions">
+                    <button id="hostedSelectFolderBtn" class="link-btn" style="display:none;">Local folder</button>
+                    <span id="hostedFolderDivider" class="header-divider" style="display:none;">•</span>
+                    <button id="hostedQuickReadBtn" class="link-btn">Quick read</button>
+                    <span class="header-divider">•</span>
+                    <button id="hostedSettingsToggleBtn" class="link-btn">Settings</button>
+                </div>
+            </div>
+
+            <div id="hostedSettingsPanel" class="settings-panel" style="display:none;">
+                <div class="settings-row">
+                    <label for="hostedDefaultModeSelect">Default reading mode</label>
+                    <select id="hostedDefaultModeSelect" class="settings-select">
+                        <option value="scroll">Webtoon / Scroll</option>
+                        <option value="paged">Paged</option>
+                    </select>
+                </div>
+                <label class="settings-row settings-toggle">
+                    <input type="checkbox" id="hostedAutoAdvanceToggle">
+                    <span>Auto-advance at end (Webtoon)</span>
+                </label>
+                <button id="hostedResetProgressBtn" class="link-btn danger">Reset all progress</button>
+            </div>
+
+            <div id="hostedRecentComics" style="display:none;">
+                <h3>Recently Read</h3>
+                <div id="hostedRecentComicsList"></div>
+            </div>
+
+            <div id="hostedAllComics" style="display:none;">
+                <h3>All Comics</h3>
+                <div id="hostedAllComicsList"></div>
+            </div>
+        </div>
+
         <div id="quickReadView" style="display:none;">
             <div class="library-header">
                 <h1>Quick Read</h1>
@@ -178,6 +218,7 @@
     <script src="https://cdn.jsdelivr.net/npm/lg-autoplay.js@1.2.0/dist/lg-autoplay.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lg-rotate.js@1.2.0/dist/lg-rotate.min.js"></script>
     <script src="https://unpkg.com/dropzone/dist/dropzone-min.js"></script>
+    <script src="./assets/js/hosted-library.js"></script>
     <script src="./assets/js/script.js"></script>
 </body>
 </html>
